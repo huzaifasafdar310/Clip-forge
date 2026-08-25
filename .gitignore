@@ -1,8 +1,19 @@
-# Environment variables
+# Environment variables & secrets
 .env
+.env.*
+*.env
+*.env.local
 
-# Node modules
+# Node modules & frontend build artifacts
 node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Compressed archives
+*.rar
+*.zip
+*.tar.gz
+*.7z
 
 # Logs
 *.log
@@ -13,7 +24,10 @@ Thumbs.db
 
 # Database and Python cache
 *.db
+*.sqlite
+*.sqlite3
 __pycache__/
+*/__pycache__/
 instance/
 
 # Generated media clips

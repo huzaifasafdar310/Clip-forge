@@ -27,6 +27,7 @@ def format_ass_timestamp(seconds: float) -> str:
     """
     Converts seconds float to ASS timestamp format H:MM:SS.cs (e.g., 0:01:23.45).
     """
+    seconds = max(0.0, float(seconds))
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
@@ -34,6 +35,12 @@ def format_ass_timestamp(seconds: float) -> str:
     if centisecs >= 100:
         centisecs = 99
     return f"{hours}:{minutes:02d}:{secs:02d}.{centisecs:02d}"
+
+def sanitize_ass_word(word: str) -> str:
+    """Strips ASS control characters to avoid breaking subtitle tag parsing."""
+    if not word:
+        return ""
+    return word.replace('\\', '').replace('{', '').replace('}', '').strip()
 
 def extract_audio_from_clip(video_path: str, audio_out_path: str) -> str:
     """
@@ -56,26 +63,26 @@ def transcribe_word_timestamps(audio_path: str, fallback_text: Optional[str] = N
     """
     Transcribes audio using faster-whisper to get precise word-level timestamps.
     Degrades gracefully to fallback_text distribution if Whisper is unavailable.
-    Returns: [{'word': 'Hello', 'start': 0.12, 'end': 0.45}, ...]
     """
     words_data = []
 
     # Attempt ASR via faster-whisper
     try:
         from faster_whisper import WhisperModel
-        logger.info("Initializing faster-whisper (tiny model) for word-level transcription...")
-        model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        model_size = os.getenv('WHISPER_MODEL_SIZE', 'tiny').strip() or 'tiny'
+        logger.info(f"Initializing faster-whisper ({model_size} model) for word-level transcription...")
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
         segments, _ = model.transcribe(audio_path, word_timestamps=True)
 
         for segment in segments:
             if hasattr(segment, 'words') and segment.words:
                 for word_info in segment.words:
-                    clean_word = word_info.word.strip()
+                    clean_word = sanitize_ass_word(word_info.word)
                     if clean_word:
                         words_data.append({
                             'word': clean_word,
-                            'start': round(word_info.start, 2),
-                            'end': round(word_info.end, 2)
+                            'start': max(0.0, round(word_info.start, 2)),
+                            'end': min(clip_duration, round(word_info.end, 2))
                         })
 
         if words_data:
@@ -87,9 +94,9 @@ def transcribe_word_timestamps(audio_path: str, fallback_text: Optional[str] = N
 
     # Fallback timestamp estimation
     if fallback_text and fallback_text.strip():
-        raw_words = re.findall(r'\S+', fallback_text.strip())
+        raw_words = [sanitize_ass_word(w) for w in re.findall(r'\S+', fallback_text.strip()) if sanitize_ass_word(w)]
     else:
-        raw_words = ["ClipFlow", "AI", "Auto", "Generated", "Captions"]
+        raw_words = ["ClipAI", "Studio", "Auto", "Generated", "Captions"]
 
     total_words = len(raw_words)
     if total_words == 0:
@@ -138,12 +145,11 @@ def translate_words_if_requested(words_data: List[Dict[str, Any]], target_lang: 
         )
 
         translated_text = response.choices[0].message.content.strip()
-        translated_words = re.findall(r'\S+', translated_text)
+        translated_words = [sanitize_ass_word(w) for w in re.findall(r'\S+', translated_text) if sanitize_ass_word(w)]
 
         if not translated_words:
             return words_data
 
-        # Map original timestamps to translated words proportionally
         total_duration = words_data[-1]['end'] if words_data else 10.0
         time_per_word = total_duration / len(translated_words)
 
@@ -172,11 +178,7 @@ def generate_ass_subtitles(
     output_ass_path: str = 'captions.ass'
 ) -> str:
     """
-    Generates Advanced SubStation Alpha (.ass) subtitle file formatted for 9:16 vertical videos (1080x1920).
-    Presets:
-      - 'tiktok_pop': 1-3 words group on screen, current spoken word highlighted in vibrant color + scaled.
-      - 'bounce': Word pop animation using ASS keyframes.
-      - 'highlight_word': Full phrase on screen, active word highlighted.
+    Generates Advanced SubStation Alpha (.ass) subtitle file formatted for 9:16 vertical videos (720x1280).
     """
     ass_color = hex_to_ass_color(highlight_color_hex)
     primary_white = "&H00FFFFFF"
@@ -184,13 +186,13 @@ def generate_ass_subtitles(
 
     ass_header = f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: 720
+PlayResY: 1280
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},72,{primary_white},&H000000FF,{outline_black},&H80000000,-1,0,0,0,100,100,0,0,1,5,3,2,60,60,400,1
+Style: Default,{font_name},46,{primary_white},&H000000FF,{outline_black},&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,40,40,260,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -199,31 +201,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     events = []
 
     if not words_data:
-        # Empty captions file
         with open(output_ass_path, 'w', encoding='utf-8') as f:
             f.write(ass_header)
         return output_ass_path
 
-    # Chunk words into small phrase groups (1 to 3 words per line) for short-form video readability
     chunk_size = 2 if style_preset in ['tiktok_pop', 'bounce'] else 4
     chunks = [words_data[i:i + chunk_size] for i in range(0, len(words_data), chunk_size)]
 
     for chunk in chunks:
-        chunk_start = format_ass_timestamp(chunk[0]['start'])
-        chunk_end = format_ass_timestamp(chunk[-1]['end'] + 0.1)
-
         if style_preset == 'tiktok_pop':
-            # Create a line where each word shines during its active start/end sub-window
             for active_idx, target_word in enumerate(chunk):
                 sub_start = format_ass_timestamp(target_word['start'])
                 sub_end = format_ass_timestamp(target_word['end'] + 0.05)
 
                 line_parts = []
                 for i, w in enumerate(chunk):
-                    word_str = w['word'].upper()
+                    word_str = sanitize_ass_word(w['word']).upper()
                     if i == active_idx:
-                        # Highlight active word with color & pop scale
-                        line_parts.append(r"{\c" + ass_color + r"\fscx115\fscy115}" + word_str + r"{\r}")
+                        line_parts.append(r"{\c" + ass_color + r"\fscx112\fscy112}" + word_str + r"{\r}")
                     else:
                         line_parts.append(r"{\c" + primary_white + r"\fscx100\fscy100}" + word_str)
 
@@ -237,10 +232,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
                 line_parts = []
                 for i, w in enumerate(chunk):
-                    word_str = w['word'].upper()
+                    word_str = sanitize_ass_word(w['word']).upper()
                     if i == active_idx:
-                        # ASS Transform bounce animation tag: scale up then normalize
-                        bounce_tag = r"{\c" + ass_color + r"\fscx130\fscy130\t(0,100,\fscx100\fscy100)}"
+                        bounce_tag = r"{\c" + ass_color + r"\fscx125\fscy125\t(0,100,\fscx100\fscy100)}"
                         line_parts.append(bounce_tag + word_str + r"{\r}")
                     else:
                         line_parts.append(r"{\c" + primary_white + r"}" + word_str)
@@ -248,14 +242,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 text_content = " ".join(line_parts)
                 events.append(f"Dialogue: 0,{sub_start},{sub_end},Default,,0,0,0,,{text_content}")
 
-        else:  # 'highlight_word' / default
+        else:  # 'highlight_word'
             for active_idx, target_word in enumerate(chunk):
                 sub_start = format_ass_timestamp(target_word['start'])
                 sub_end = format_ass_timestamp(target_word['end'] + 0.05)
 
                 line_parts = []
                 for i, w in enumerate(chunk):
-                    word_str = w['word']
+                    word_str = sanitize_ass_word(w['word'])
                     if i == active_idx:
                         line_parts.append(r"{\c" + ass_color + r"\b1}" + word_str + r"{\r}")
                     else:
@@ -275,8 +269,6 @@ def burn_captions_into_video(input_video_path: str, output_video_path: str, ass_
     Burns .ass subtitle file into input_video_path using FFmpeg ass filter.
     """
     ffmpeg_exe = get_ffmpeg_path()
-
-    # Escape windows path separators for FFmpeg filter string
     clean_ass_path = ass_path.replace('\\', '/').replace(':', '\\:')
 
     cmd = [
@@ -311,8 +303,8 @@ def process_clip_captions(
     temp_dir: Optional[str] = None
 ) -> str:
     """
-    Orchestrates the entire Phase 1 caption pipeline:
-    1. Extract audio from clip
+    Orchestrates caption pipeline:
+    1. Extract audio
     2. Transcribe word-level timestamps (faster-whisper or fallback)
     3. Translate if target language requested
     4. Generate ASS animated subtitle file
@@ -326,30 +318,30 @@ def process_clip_captions(
     ass_path = os.path.join(temp_dir, f"{base_name}_captions.ass")
 
     try:
-        # Step 1: Extract Audio
-        extract_audio_from_clip(clip_video_path, audio_path)
+        if os.path.exists(clip_video_path) and os.path.getsize(clip_video_path) > 0:
+            extract_audio_from_clip(clip_video_path, audio_path)
+            words_data = transcribe_word_timestamps(audio_path, fallback_text=fallback_transcript, clip_duration=clip_duration)
+            words_data = translate_words_if_requested(words_data, caption_language)
+            generate_ass_subtitles(
+                words_data=words_data,
+                style_preset=caption_style,
+                font_name=caption_font,
+                highlight_color_hex=caption_color,
+                output_ass_path=ass_path
+            )
+            burn_captions_into_video(clip_video_path, output_video_path, ass_path)
+            return output_video_path
+        else:
+            raise FileNotFoundError(f"Clip video file missing or empty: {clip_video_path}")
 
-        # Step 2: Transcribe Words
-        words_data = transcribe_word_timestamps(audio_path, fallback_text=fallback_transcript, clip_duration=clip_duration)
-
-        # Step 3: Translate if needed
-        words_data = translate_words_if_requested(words_data, caption_language)
-
-        # Step 4: Generate ASS file
-        generate_ass_subtitles(
-            words_data=words_data,
-            style_preset=caption_style,
-            font_name=caption_font,
-            highlight_color_hex=caption_color,
-            output_ass_path=ass_path
-        )
-
-        # Step 5: Burn ASS into Video
-        burn_captions_into_video(clip_video_path, output_video_path, ass_path)
+    except Exception as caption_err:
+        logger.warning(f"Caption processing warning for {clip_video_path}: {caption_err}. Falling back to raw video copy.")
+        import shutil
+        if os.path.exists(clip_video_path):
+            shutil.copyfile(clip_video_path, output_video_path)
         return output_video_path
 
     finally:
-        # Clean up temporary audio & ASS files
         for temp_file in [audio_path, ass_path]:
             if os.path.exists(temp_file):
                 try:

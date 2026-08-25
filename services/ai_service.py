@@ -18,6 +18,7 @@ def get_groq_client():
         return None
 
 def seconds_to_timestamp(seconds):
+    seconds = max(0.0, float(seconds))
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
@@ -26,12 +27,31 @@ def seconds_to_timestamp(seconds):
     return f"{minutes}:{secs:02d}"
 
 def timestamp_to_seconds(timestamp):
-    parts = timestamp.split(':')
-    if len(parts) == 2:
-        return int(parts[0]) * 60 + int(parts[1])
-    elif len(parts) == 3:
-        return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-    return 0
+    if isinstance(timestamp, (int, float)):
+        return float(timestamp)
+    parts = str(timestamp).strip().split(':')
+    try:
+        if len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+        elif len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+    except (ValueError, TypeError):
+        pass
+    return 0.0
+
+def parse_seconds_flexible(val, fallback=0.0) -> float:
+    """Parses any input (string '01:30', float 90.5, integer) into seconds float."""
+    if val is None:
+        return fallback
+    if isinstance(val, (int, float)):
+        return float(val)
+    val_str = str(val).strip()
+    if ':' in val_str:
+        return timestamp_to_seconds(val_str)
+    try:
+        return float(val_str)
+    except (ValueError, TypeError):
+        return fallback
 
 def generate_fallback_segments(duration_seconds, num_clips=3):
     """
@@ -44,23 +64,20 @@ def generate_fallback_segments(duration_seconds, num_clips=3):
     if duration_seconds <= 0:
         return []
 
-    # For clips, target up to 60s or 75% of video length (min 15s)
     clip_len = min(60.0, max(15.0, duration_seconds * 0.75))
     if clip_len > duration_seconds:
         clip_len = duration_seconds
 
     if duration_seconds <= 15.0 or num_clips == 1:
-        # Video is very short or 1 clip requested
         return [{
             'start_seconds': 0.0,
             'end_seconds': round(duration_seconds, 2),
             'startTime': seconds_to_timestamp(0),
             'endTime': seconds_to_timestamp(duration_seconds),
-            'reasoning': 'Full video segment',
+            'reasoning': 'Full video highlight segment',
             'transcript_fallback': True
         }]
 
-    # Space out num_clips start times across available video duration
     max_start = max(0.0, duration_seconds - clip_len)
     step = max_start / max(1, num_clips - 1)
 
@@ -77,7 +94,7 @@ def generate_fallback_segments(duration_seconds, num_clips=3):
             'end_seconds': float(end_sec),
             'startTime': seconds_to_timestamp(start_sec),
             'endTime': seconds_to_timestamp(end_sec),
-            'reasoning': f'Uniform segment #{i+1} selection',
+            'reasoning': f'Uniform viral segment #{i+1}',
             'transcript_fallback': True
         })
     return segments
@@ -85,13 +102,13 @@ def generate_fallback_segments(duration_seconds, num_clips=3):
 def analyze_transcript_highlights(video_id, transcript_formatted, duration_seconds, title, description, num_clips=3):
     """
     Uses Groq llama-3.3-70b-versatile to rank transcript segments for highlight potential.
-    Returns requested number of non-overlapping 45-60 second segments.
+    Enforces strict non-overlapping segment intervals.
     """
     num_clips = max(1, min(int(num_clips), 10))
     duration_seconds = float(duration_seconds)
     client = get_groq_client()
     if not client or not transcript_formatted:
-        logger.warning(f"Falling back to random highlight selection for video {video_id} (Groq available: {client is not None}, Transcript available: {bool(transcript_formatted)})")
+        logger.warning(f"Using fallback highlight selection for video {video_id} (Groq: {client is not None}, Transcript: {bool(transcript_formatted)})")
         return generate_fallback_segments(duration_seconds, num_clips=num_clips)
 
     prompt = f"""
@@ -129,7 +146,6 @@ REQUIREMENTS:
         
         parsed = json.loads(content)
         if isinstance(parsed, dict):
-            # If wrapped in a key like 'segments' or 'highlights'
             parsed_list = parsed.get('segments') or parsed.get('highlights') or parsed.get('clips') or list(parsed.values())[0]
         else:
             parsed_list = parsed
@@ -137,20 +153,16 @@ REQUIREMENTS:
         if not isinstance(parsed_list, list) or len(parsed_list) == 0:
             raise ValueError("Parsed Groq response is not a valid list of segments")
 
-        segments = []
-        for item in parsed_list[:num_clips]:
-            try:
-                s_sec = float(item.get('start_seconds', 0))
-                e_sec = float(item.get('end_seconds', s_sec + 45))
-            except (ValueError, TypeError):
-                continue
+        extracted = []
+        for item in parsed_list:
+            s_sec = parse_seconds_flexible(item.get('start_seconds'), fallback=0.0)
+            e_sec = parse_seconds_flexible(item.get('end_seconds'), fallback=s_sec + 45.0)
 
-            # Ensure start is within video bounds
+            # Boundaries validation
             s_sec = max(0.0, min(s_sec, max(0.0, duration_seconds - 5.0)))
-            # Ensure end is after start and within video bounds
             e_sec = max(s_sec + 5.0, min(e_sec, duration_seconds))
 
-            segments.append({
+            extracted.append({
                 'start_seconds': round(s_sec, 2),
                 'end_seconds': round(e_sec, 2),
                 'startTime': seconds_to_timestamp(s_sec),
@@ -159,15 +171,28 @@ REQUIREMENTS:
                 'transcript_fallback': False
             })
 
-        # Fill up to num_clips if fewer segments returned
-        if len(segments) < num_clips:
+        # Sort and eliminate overlaps
+        extracted.sort(key=lambda x: x['start_seconds'])
+        non_overlapping = []
+        for cand in extracted:
+            if not non_overlapping:
+                non_overlapping.append(cand)
+            else:
+                last_end = non_overlapping[-1]['end_seconds']
+                if cand['start_seconds'] >= last_end - 2.0:  # Allow 2s tolerance
+                    non_overlapping.append(cand)
+            if len(non_overlapping) >= num_clips:
+                break
+
+        # Fill up to num_clips if fewer non-overlapping segments returned
+        if len(non_overlapping) < num_clips:
             fallback = generate_fallback_segments(duration_seconds, num_clips=num_clips)
             for fb in fallback:
-                if len(segments) >= num_clips:
+                if len(non_overlapping) >= num_clips:
                     break
-                segments.append(fb)
+                non_overlapping.append(fb)
 
-        return segments
+        return non_overlapping[:num_clips]
 
     except Exception as e:
         logger.error(f"Error during Groq transcript analysis: {e}. Falling back to standard segment picking.")
@@ -180,7 +205,6 @@ def generate_ai_clip_metadata(original_title, original_description, transcript_s
     client = get_groq_client()
     
     if not client:
-        # Fallback metadata generation without Groq API
         clean_words = [w for w in original_title.split() if len(w) > 3][:3]
         topic = " ".join(clean_words) if clean_words else "Viral Clip"
         fallback_title = f"{topic} - Part {clip_number} #{start_timestamp}"[:60]
@@ -201,7 +225,7 @@ Clip Timestamp: {start_timestamp} to {end_timestamp}
 Clip Transcript Snippet: {transcript_snippet if transcript_snippet else "N/A"}
 
 REQUIREMENTS:
-1. "title": Write a scroll-stopping, highly engaging title specific to this clip's content. Max 60 characters. No generic filler like "Best of Part 1".
+1. "title": Write a scroll-stopping, highly engaging title specific to this clip's content. Max 60 characters.
 2. "description": Write an engaging description summarizing what happens in this specific clip, ending with relevant hashtags (#Shorts, #Viral, etc.). Max 500 characters.
 3. "tags": Provide 5-8 relevant tags as a JSON array of strings.
 
