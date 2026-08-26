@@ -21,8 +21,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const client = (window as any).google.accounts.oauth2.initTokenClient({
             client_id: clientId,
-            scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
+            scope: 'openid email profile https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
             callback: async (response: any) => {
+
               setIsLoggingIn(false);
               if (response.error) {
                 console.error('Google OAuth Callback Error:', response);
