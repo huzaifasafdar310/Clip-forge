@@ -280,18 +280,21 @@ export const api = {
     };
 
     setTimeout(async () => {
-      for (const clip of clips) {
+      const updatedResults: Clip[] = [];
+
+      for (let i = 0; i < clips.length; i++) {
+        const clip = clips[i];
         try {
           // Verify or trigger render before uploading
           let blob = renderedBlobsCache[clip.id];
 
           if (!blob) {
-            onProgress?.(`Rendering 9:16 vertical clip '${clip.title}'...`, 30);
+            onProgress?.(`Rendering 9:16 vertical clip: "${clip.title}"...`, 30);
             const renderResult = await api.renderClip(clip.id);
             blob = renderResult.blob;
           }
 
-          onProgress?.(`Uploading '${clip.title}' to YouTube Shorts...`, 70);
+          onProgress?.(`Streaming bytes to YouTube Shorts: "${clip.title}"...`, 75);
 
           const result = await uploadService.uploadShortToYoutube(blob, {
             title: clip.title,
@@ -301,29 +304,35 @@ export const api = {
             accessToken,
           });
 
-          storageService.updateClip(clip.id, {
+          const updated = storageService.updateClip(clip.id, {
             status: 'completed',
             render_status: 'rendered',
             youtube_url: result.youtubeUrl,
           });
+
+          updatedResults.push(updated || { ...clip, status: 'completed', youtube_url: result.youtubeUrl });
         } catch (e: any) {
           console.error(`Upload error for clip ${clip.id}:`, e);
-          storageService.updateClip(clip.id, {
+          const failed = storageService.updateClip(clip.id, {
             status: 'failed',
             error: e.message || 'YouTube Upload Failed',
           });
+          updatedResults.push(failed || { ...clip, status: 'failed', error: e.message });
         }
       }
 
       activeJobs[jobId] = {
         ...activeJobs[jobId],
-        status: 'completed',
+        status: updatedResults.some((r) => r.status === 'completed') ? 'completed' : 'failed',
+        error_message: updatedResults.find((r) => r.status === 'failed')?.error || null,
+        results: updatedResults,
         updated_at: new Date().toISOString(),
       };
     }, 100);
 
     return { job_id: jobId };
   },
+
 
   // 5. Job Status
   async getJobStatus(jobId: string): Promise<JobStatusResponse> {
