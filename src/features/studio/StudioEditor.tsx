@@ -8,6 +8,7 @@ import { TimelineScrubber } from './TimelineScrubber';
 import { CaptionControls } from './CaptionControls';
 import { MetadataEditor } from './MetadataEditor';
 import { ExportModal } from './ExportModal';
+import { PublishConfirmModal } from './PublishConfirmModal';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -46,8 +47,9 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(30);
 
-  // Rendering & Export state
+  // Rendering & Modals state
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
+  const [isPublishConfirmOpen, setIsPublishConfirmOpen] = useState<boolean>(false);
   const [isRendering, setIsRendering] = useState<boolean>(false);
   const [renderProgress, setRenderProgress] = useState<number>(0);
   const [renderStatusText, setRenderStatusText] = useState<string>('');
@@ -96,6 +98,7 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
       c.id === activeClip.id ? { ...c, ...updates } : c
     );
     setClips(updatedClips);
+    storageService.updateClip(activeClip.id, updates);
     onClipsUpdated?.(updatedClips);
   };
 
@@ -134,7 +137,6 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
     }
   };
 
-
   // Direct Download with on-the-fly rendering if unrendered
   const handleDirectDownload = async () => {
     if (!activeClip) return;
@@ -155,23 +157,28 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
     }
   };
 
-  // Post to YouTube with validation
-  const handlePostToYouTube = async () => {
+  // Open Publish Confirmation Modal
+  const handleOpenPublishModal = () => {
     if (!isAuthenticated) {
       login();
       return;
     }
-    if (!activeClip) return;
+    setIsPublishConfirmOpen(true);
+  };
 
-    try {
-      if (activeClip.render_status !== 'rendered') {
-        await handleRenderActiveClip();
-      }
-      if (onStartUploadJob) {
-        onStartUploadJob([activeClip]);
-      }
-    } catch (err: any) {
-      console.error('YouTube post prep error:', err);
+  // Confirm and start YouTube Upload job with verified metadata & selected clips
+  const handleConfirmPublish = async (clipsToUpload: Clip[]) => {
+    if (!clipsToUpload || clipsToUpload.length === 0) return;
+
+    // Synchronize edited titles/descriptions into local state and storage
+    const updatedMap = new Map(clipsToUpload.map((c) => [c.id, c]));
+    const newClips = clips.map((c) => updatedMap.get(c.id) || c);
+    setClips(newClips);
+    storageService.saveClips(newClips);
+    onClipsUpdated?.(newClips);
+
+    if (onStartUploadJob) {
+      onStartUploadJob(clipsToUpload);
     }
   };
 
@@ -215,9 +222,9 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
           <Button
             size="sm"
             variant="primary"
-            onClick={handlePostToYouTube}
+            onClick={handleOpenPublishModal}
             disabled={!activeClip || isRendering}
-            className="text-xs font-bold"
+            className="text-xs font-bold shadow-glow-sm"
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>Post to YouTube</span>
@@ -311,13 +318,22 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
         </div>
       </div>
 
-      {/* Export Modal */}
+      {/* Export & Render Modal */}
       <ExportModal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
         clip={activeClip}
         onDownload={handleDirectDownload}
-        onUploadYouTube={handlePostToYouTube}
+        onUploadYouTube={handleOpenPublishModal}
+      />
+
+      {/* YouTube Shorts Publish Confirmation Modal */}
+      <PublishConfirmModal
+        isOpen={isPublishConfirmOpen}
+        onClose={() => setIsPublishConfirmOpen(false)}
+        clips={clips}
+        activeClip={activeClip}
+        onConfirmPublish={handleConfirmPublish}
       />
     </div>
   );
