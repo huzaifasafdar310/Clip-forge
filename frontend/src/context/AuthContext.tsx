@@ -4,9 +4,11 @@ import { api } from '@/lib/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const DEFAULT_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '115243955025-34mt0dlogqe8pu8vjfqfg6l6s4v6j0qh.apps.googleusercontent.com';
-
-
+// Preferred source: VITE_GOOGLE_CLIENT_ID from build-time environment,
+// falling back to the hardcoded default client ID if the env var is not set.
+const DEFAULT_CLIENT_ID =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+  '115243955025-34mt0dlogqe8pu8vjfqfg6l6s4v6j0qh.apps.googleusercontent.com';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<GoogleUser | null>(null);
@@ -15,25 +17,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [clientId, setClientId] = useState<string>(DEFAULT_CLIENT_ID);
   const [tokenClient, setTokenClient] = useState<any>(null);
 
-  // 1. Restore persistent user session from localStorage and optional backend
+  // 1. Fetch public config (Google Client ID) & restore persistent user session
   useEffect(() => {
     const initAuth = async () => {
-      // Step A: Restore from localStorage if present and not expired
+      // Step A: Attempt to fetch real Google Client ID from backend /api/config first (if backend is deployed & reachable)
       try {
-        const saved = localStorage.getItem('clipai_user');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed?.accessToken && (parsed.expiresAt ? parsed.expiresAt > Date.now() : true)) {
-            setUser(parsed);
-          } else {
-            localStorage.removeItem('clipai_user');
+        const res = await fetch('/api/config');
+        if (res.ok) {
+          const contentType = res.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await res.json();
+            if (data?.google_client_id && typeof data.google_client_id === 'string' && data.google_client_id.trim()) {
+              setClientId(data.google_client_id.trim());
+            }
           }
         }
-      } catch {
-        localStorage.removeItem('clipai_user');
+      } catch (err) {
+        // Backend not reachable — fallback to VITE_GOOGLE_CLIENT_ID / DEFAULT_CLIENT_ID seamlessly
+        console.warn('Could not fetch backend config, using default Client ID:', err);
       }
 
-      // Step B: If backend is configured, check database session
+      // Step B: Check Database for existing persistent session
       try {
         const authMe = await api.getCurrentUser();
         if (authMe?.is_authenticated && authMe?.user && authMe?.access_token) {
@@ -47,9 +51,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
           setUser(dbUser);
           localStorage.setItem('clipai_user', JSON.stringify(dbUser));
+          return;
         }
       } catch {
-        // Backend not connected or no session — safe to ignore
+        // Session check failed or not logged in — safe to ignore
+      }
+
+      // Step C: Restore from localStorage if present and valid
+      try {
+        const saved = localStorage.getItem('clipai_user');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.accessToken && (parsed.expiresAt ? parsed.expiresAt > Date.now() : true)) {
+            setUser(parsed);
+          } else {
+            localStorage.removeItem('clipai_user');
+          }
+        }
+      } catch {
+        localStorage.removeItem('clipai_user');
       }
     };
 
@@ -65,7 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const client = (window as any).google.accounts.oauth2.initTokenClient({
             client_id: clientId,
-            scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+            scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
             callback: async (response: any) => {
               setIsLoggingIn(false);
               if (response.error) {
@@ -190,7 +210,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthError(null);
     api.logoutUser().catch(() => {});
   };
-
 
   const clearAuthError = () => {
     setAuthError(null);
