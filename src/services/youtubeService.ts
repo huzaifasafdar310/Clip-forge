@@ -199,7 +199,105 @@ export const youtubeService = {
     };
   },
 
+  async fetchDirectStreamUrl(videoId: string): Promise<string | null> {
+    if (!videoId) return null;
+
+    // 1. Try Invidious Public Video Stream Mirrors
+    const invidiousInstances = [
+      'https://inv.nadeko.net',
+      'https://invidious.nerdvpn.de',
+      'https://invidious.protokolla.fi',
+      'https://invidious.private.coffee',
+      'https://invidious.jing.rocks',
+    ];
+
+    for (const host of invidiousInstances) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(`${host}/api/v1/videos/${videoId}`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.formatStreams) && data.formatStreams.length > 0) {
+            // Prefer 720p or 360p mp4 stream with combined audio
+            const stream =
+              data.formatStreams.find((s: any) => s.quality === 'hd720' || s.itag === '22') ||
+              data.formatStreams.find((s: any) => s.container === 'mp4') ||
+              data.formatStreams[0];
+
+            if (stream?.url) {
+              return stream.url;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Try Piped API Instances
+    const pipedInstances = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.privacydev.net',
+      'https://piped-api.lunar.icu',
+    ];
+
+    for (const host of pipedInstances) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(`${host}/streams/${videoId}`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.videoStreams) && data.videoStreams.length > 0) {
+            const stream =
+              data.videoStreams.find((s: any) => s.videoOnly === false && s.format === 'MPEG_4') ||
+              data.videoStreams.find((s: any) => s.format === 'MPEG_4') ||
+              data.videoStreams[0];
+
+            if (stream?.url) {
+              return stream.url;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Try Cobalt API
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch('https://api.cobalt.tools/api/json', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          vQuality: '720',
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.url) return data.url;
+      }
+    } catch {}
+
+    return null;
+  },
+
   async getCuratedChannels(limit: number = 20): Promise<any[]> {
     return (curatedChannelsData as any[]).slice(0, limit);
   },
 };
+

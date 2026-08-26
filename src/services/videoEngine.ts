@@ -1,4 +1,6 @@
 import { captionEngine, CaptionStyleOptions } from './captionEngine';
+import { youtubeService, extractYoutubeId } from './youtubeService';
+
 
 export interface VideoMetadata {
   duration: number;
@@ -81,11 +83,32 @@ export const videoEngine = {
           onProgress
         );
       } catch (directErr) {
-        console.warn('Direct video render note, using motion canvas renderer:', directErr);
+        console.warn('Direct video render note, checking stream resolver:', directErr);
       }
     }
 
-    // Full duration motion canvas renderer
+    // Try resolving direct CORS MP4 stream for YouTube video to cut REAL moving footage
+    const ytId = extractYoutubeId(sourceUrl);
+    if (ytId) {
+      try {
+        if (onProgress) onProgress(5);
+        const directStreamUrl = await youtubeService.fetchDirectStreamUrl(ytId);
+        if (directStreamUrl) {
+          return await this.renderFromDirectVideo(
+            directStreamUrl,
+            startTime,
+            endTime,
+            captionText,
+            captionOptions,
+            onProgress
+          );
+        }
+      } catch (streamErr) {
+        console.warn('Direct stream resolution note, falling back to motion canvas:', streamErr);
+      }
+    }
+
+    // High quality motion canvas renderer as fallback
     return this.renderMotionCanvasShort(
       sourceUrl,
       startTime,
@@ -95,6 +118,7 @@ export const videoEngine = {
       onProgress
     );
   },
+
 
   // 1. Direct Video Stream Renderer (for local video files / Blob URLs)
   async renderFromDirectVideo(
