@@ -127,10 +127,13 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
       return result.url;
     } catch (err: any) {
       setIsRendering(false);
-      alert(`Render note: ${err.message}`);
+      const msg = err?.message || (typeof err === 'string' ? err : 'Video rendering could not be completed in this browser.');
+      console.error('Render error:', err);
+      alert(`Render Note: ${msg}`);
       throw err;
     }
   };
+
 
   // Direct Download with on-the-fly rendering if unrendered
   const handleDirectDownload = async () => {
