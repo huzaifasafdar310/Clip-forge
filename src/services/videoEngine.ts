@@ -64,7 +64,11 @@ export const videoEngine = {
     onProgress?: (percent: number) => void
   ): Promise<Blob> {
     const isDirectVideo =
-      sourceUrl && (sourceUrl.startsWith('blob:') || sourceUrl.endsWith('.mp4') || sourceUrl.endsWith('.webm'));
+      sourceUrl &&
+      (sourceUrl.startsWith('blob:') ||
+        sourceUrl.endsWith('.mp4') ||
+        sourceUrl.endsWith('.webm') ||
+        sourceUrl.includes('blob.core.windows.net'));
 
     if (isDirectVideo) {
       try {
@@ -81,7 +85,7 @@ export const videoEngine = {
       }
     }
 
-    // Fallback or YouTube motion short renderer
+    // Full duration motion canvas renderer
     return this.renderMotionCanvasShort(
       sourceUrl,
       startTime,
@@ -216,7 +220,7 @@ export const videoEngine = {
     });
   },
 
-  // 2. Motion Canvas Short Renderer (Generates 9:16 Vertical MP4 for YouTube clips / remote URLs)
+  // 2. Motion Canvas Short Renderer (Renders Full Duration 9:16 Vertical Video for YouTube Clips)
   async renderMotionCanvasShort(
     sourceUrl: string,
     startTime: number,
@@ -225,7 +229,7 @@ export const videoEngine = {
     captionOptions: CaptionStyleOptions,
     onProgress?: (percent: number) => void
   ): Promise<Blob> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
         const targetWidth = 720;
         const targetHeight = 1280;
@@ -236,7 +240,36 @@ export const videoEngine = {
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Could not initialize canvas context');
 
+        // Extract YouTube video ID if present to load thumbnail backdrop
+        let bgImage: HTMLImageElement | null = null;
+        const ytMatch = sourceUrl?.match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/)([^?&/]+)/);
+        if (ytMatch && ytMatch[1]) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+          await new Promise((res) => {
+            img.onload = () => {
+              bgImage = img;
+              res(null);
+            };
+            img.onerror = () => res(null);
+          });
+        }
+
         const stream = canvas.captureStream(30);
+
+        // Add synthesized silent/ambient audio track so player recognizes a valid video container
+        try {
+          const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          gain.gain.value = 0.001; // Inaudible subtle carrier
+          osc.connect(gain);
+          const dest = audioCtx.createMediaStreamDestination();
+          gain.connect(dest);
+          osc.start();
+          dest.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
+        } catch {}
 
         const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')
           ? 'video/mp4;codecs=avc1'
@@ -259,8 +292,8 @@ export const videoEngine = {
           resolve(blob);
         };
 
-        // Render duration: max 5 seconds for fast in-browser preview short export
-        const totalDurationSec = Math.min(5.0, Math.max(2.0, endTime - startTime));
+        // Real Full Duration of the generated clip segment (e.g. 50 seconds for 00:24 - 01:14)
+        const totalDurationSec = Math.max(5.0, endTime - startTime);
         const startTimeMs = performance.now();
 
         recorder.start(100);
@@ -271,33 +304,66 @@ export const videoEngine = {
 
           if (onProgress) onProgress(Math.min(99, Math.round(progress * 100)));
 
-          // Draw Dark Cyber / OLED Gradient Backdrop
-          const grad = ctx.createLinearGradient(0, 0, targetWidth, targetHeight);
-          grad.addColorStop(0, '#09090b');
-          grad.addColorStop(0.5, '#18181b');
-          grad.addColorStop(1, '#09090b');
-          ctx.fillStyle = grad;
-          ctx.fillRect(0, 0, targetWidth, targetHeight);
+          // Draw Dynamic Backdrop
+          if (bgImage) {
+            // Draw blurred & zoomed thumbnail backdrop
+            const scale = 1.0 + Math.sin(progress * Math.PI) * 0.08;
+            ctx.save();
+            ctx.filter = 'blur(10px) brightness(0.45)';
+            const dw = targetWidth * scale * 1.5;
+            const dh = (dw * 9) / 16;
+            ctx.drawImage(
+              bgImage,
+              (targetWidth - dw) / 2,
+              (targetHeight - dh) / 2,
+              dw,
+              dh
+            );
+            ctx.restore();
+
+            // Center Crisp Image Card
+            ctx.save();
+            const cardW = targetWidth * 0.92;
+            const cardH = (cardW * 9) / 16;
+            const cardX = (targetWidth - cardW) / 2;
+            const cardY = targetHeight * 0.28;
+
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+            ctx.shadowBlur = 24;
+            ctx.drawImage(bgImage, cardX, cardY, cardW, cardH);
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(cardX, cardY, cardW, cardH);
+            ctx.restore();
+          } else {
+            // Dark OLED Cyber Gradient Backdrop
+            const grad = ctx.createLinearGradient(0, 0, targetWidth, targetHeight);
+            grad.addColorStop(0, '#09090b');
+            grad.addColorStop(0.5, '#18181b');
+            grad.addColorStop(1, '#09090b');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, targetWidth, targetHeight);
+          }
 
           // Top Header Badge
           ctx.save();
           ctx.fillStyle = '#facc15';
-          ctx.font = 'bold 24px monospace';
+          ctx.font = 'bold 22px monospace';
           ctx.textAlign = 'center';
-          ctx.fillText('CLIPAISTUDIO 9:16 SHORTS', targetWidth / 2, 120);
+          ctx.fillText('CLIPAISTUDIO 9:16 SHORTS', targetWidth / 2, 90);
           ctx.restore();
 
-          // Center Animated Waveform / Visualizer
+          // Center Dynamic Audio Waveform
           ctx.save();
-          const barCount = 20;
-          const barWidth = 14;
-          const gap = 10;
+          const barCount = 24;
+          const barWidth = 12;
+          const gap = 8;
           const totalW = barCount * (barWidth + gap);
           const startX = (targetWidth - totalW) / 2;
-          const centerY = targetHeight * 0.45;
+          const centerY = targetHeight * 0.52;
 
           for (let i = 0; i < barCount; i++) {
-            const h = 40 + Math.sin(progress * 12 + i * 0.8) * 35;
+            const h = 25 + Math.sin(progress * 16 + i * 0.6) * 30;
             ctx.fillStyle = i % 2 === 0 ? '#facc15' : '#38bdf8';
             ctx.fillRect(startX + i * (barWidth + gap), centerY - h / 2, barWidth, h);
           }
