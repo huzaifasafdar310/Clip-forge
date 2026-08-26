@@ -10,8 +10,9 @@ import {
   ChevronRight,
   Clock,
   Check,
+  Film,
   Hash,
-  Video,
+  Share2,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -95,7 +96,6 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
 
   const toggleSelectAll = () => {
     if (selectedIds.length === clips.length) {
-      // Keep active clip selected
       setSelectedIds(editingClipId ? [editingClipId] : [clips[0].id]);
     } else {
       setSelectedIds(clips.map((c) => c.id));
@@ -159,38 +159,35 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
       onClose={onClose}
       title="Confirm YouTube Shorts Publishing"
       description="Review and customize which clips to publish and their metadata before uploading."
-      maxWidth="lg"
+      maxWidth="3xl"
     >
-      <div className="space-y-5">
-        {/* Connected Channel Destination Banner */}
-        <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-surface-2 via-surface-2 to-surface-1 border border-border-subtle rounded-2xl shadow-sm">
+      <div className="space-y-4">
+        {/* Channel Destination Bar */}
+        <div className="flex items-center justify-between p-3 px-4 bg-surface-2 border border-border-subtle rounded-2xl">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center justify-center text-red-500 shadow-glow-sm">
-              <Youtube className="w-5 h-5 fill-current" />
+            <div className="w-8 h-8 rounded-xl bg-red-600/20 border border-red-600/30 flex items-center justify-center text-red-500 shrink-0">
+              <Youtube className="w-4 h-4 fill-current" />
             </div>
             <div>
-              <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider font-semibold">
-                Destination YouTube Channel
+              <p className="text-[10px] font-mono text-muted-foreground uppercase font-semibold">
+                Destination Channel
               </p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <p className="text-sm font-bold text-foreground">
-                  {user?.channelTitle || user?.name || 'Connected YouTube Account'}
-                </p>
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400/20" />
-              </div>
+              <p className="text-xs font-bold text-foreground">
+                {user?.channelTitle || user?.name || 'Connected YouTube Account'}
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[11px] font-mono text-emerald-400 font-semibold">
+          <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-mono text-emerald-400 font-bold flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span>OAuth Connected</span>
-          </div>
+          </span>
         </div>
 
-        {/* 2-Column Selection & Metadata Workspace */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+        {/* 2-Column Responsive Workspace */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           {/* Left Column: Clips Selector (5 Cols) */}
-          <div className="md:col-span-5 flex flex-col space-y-2.5">
+          <div className="md:col-span-5 flex flex-col space-y-2">
             <div className="flex items-center justify-between px-1">
               <span className="text-[11px] font-mono uppercase text-muted-foreground font-semibold">
                 Select Clips ({selectedIds.length}/{clips.length})
@@ -198,13 +195,13 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
               <button
                 type="button"
                 onClick={toggleSelectAll}
-                className="text-[11px] font-mono text-primary hover:text-primary-hover font-semibold transition-colors"
+                className="text-[11px] font-mono text-primary hover:underline font-semibold"
               >
                 {selectedIds.length === clips.length ? 'Deselect All' : 'Select All'}
               </button>
             </div>
 
-            <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
               {clips.map((clip, index) => {
                 const isSelected = selectedIds.includes(clip.id);
                 const isEditing = editingClipId === clip.id;
@@ -213,40 +210,41 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
                   <div
                     key={clip.id}
                     onClick={() => setEditingClipId(clip.id)}
-                    className={`group relative p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                    className={`group p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
                       isEditing
                         ? 'bg-surface-2 border-primary shadow-glow-sm'
                         : isSelected
-                        ? 'bg-surface-2/70 border-border-subtle hover:border-primary/40'
-                        : 'bg-surface-0/60 border-border-subtle/70 opacity-60 hover:opacity-100 hover:bg-surface-2/40'
+                        ? 'bg-surface-2/60 border-border-subtle hover:border-primary/40'
+                        : 'bg-surface-0 border-border-subtle/70 opacity-60 hover:opacity-100'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Checkbox Trigger */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {/* Checkbox */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleSelectClip(clip.id);
                         }}
-                        className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
+                        className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all shrink-0 ${
                           isSelected
-                            ? 'bg-primary border-primary text-black shadow-sm'
+                            ? 'bg-primary border-primary text-black font-black shadow-sm'
                             : 'border-border-muted bg-surface-1 hover:border-primary/60'
                         }`}
                       >
                         {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                       </button>
 
+                      {/* Clip Info */}
                       <div className="min-w-0 space-y-0.5">
                         <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
                           {editedMetadata[clip.id]?.title || clip.title}
                         </p>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono text-muted-foreground flex items-center gap-1">
+                        <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
+                          <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3" /> {clip.startTime} - {clip.endTime}
                           </span>
-                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-surface-0 border border-border-subtle text-primary font-bold">
+                          <span className="px-1.5 py-0.2 rounded bg-surface-0 border border-border-subtle text-primary font-bold">
                             9:16
                           </span>
                         </div>
@@ -265,36 +263,35 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
           </div>
 
           {/* Right Column: Metadata Editor for Selected Clip (7 Cols) */}
-          <div className="md:col-span-7 bg-surface-2/80 rounded-2xl border border-border-subtle p-4 space-y-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-border-subtle pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/25 flex items-center justify-center text-primary">
+          <div className="md:col-span-7 bg-surface-2/80 rounded-2xl border border-border-subtle p-4 space-y-3.5 shadow-sm">
+            {/* Header with status */}
+            <div className="flex items-center justify-between border-b border-border-subtle pb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center text-primary shrink-0">
                   <Sparkles className="w-3.5 h-3.5" />
                 </div>
-                <div>
-                  <h4 className="text-xs font-bold text-foreground">
-                    Clip Details ({currentEditingClip?.startTime} - {currentEditingClip?.endTime})
-                  </h4>
-                </div>
+                <h4 className="text-xs font-bold text-foreground truncate">
+                  Clip Details ({currentEditingClip?.startTime} - {currentEditingClip?.endTime})
+                </h4>
               </div>
 
               <span
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold border ${
+                className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold border shrink-0 ${
                   isCurrentSelected
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
                     : 'bg-surface-0 text-muted-foreground border-border-subtle'
                 }`}
               >
-                {isCurrentSelected ? '✓ Selected for upload' : '○ Not selected'}
+                {isCurrentSelected ? '✓ Selected for upload' : '○ Unchecked'}
               </span>
             </div>
 
             {currentEditingClip && (
               <>
                 {/* Title */}
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <div className="flex justify-between items-center text-xs">
-                    <label className="font-mono uppercase text-muted-foreground font-semibold text-[11px]">
+                    <label className="font-mono uppercase text-muted-foreground font-semibold text-[10px]">
                       YouTube Shorts Title
                     </label>
                     <span className="text-[10px] font-mono text-muted-foreground">
@@ -307,15 +304,15 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
                       handleMetadataChange(currentEditingClip.id, 'title', e.target.value)
                     }
                     placeholder="Engaging viral title #Shorts"
-                    className="text-xs font-semibold bg-surface-0 border-border-subtle focus:border-primary"
+                    className="text-xs font-semibold bg-surface-0 border-border-subtle focus:border-primary h-9"
                     maxLength={100}
                   />
                 </div>
 
                 {/* Description */}
-                <div className="space-y-1.5">
+                <div className="space-y-1">
                   <div className="flex justify-between items-center text-xs">
-                    <label className="font-mono uppercase text-muted-foreground font-semibold text-[11px]">
+                    <label className="font-mono uppercase text-muted-foreground font-semibold text-[10px]">
                       Description & Hashtags
                     </label>
                     <span className="text-[10px] font-mono text-muted-foreground">
@@ -350,8 +347,8 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
                 </div>
 
                 {/* Privacy Visibility */}
-                <div className="space-y-1.5 pt-1">
-                  <label className="font-mono uppercase text-muted-foreground font-semibold text-[11px] block">
+                <div className="space-y-1 pt-0.5">
+                  <label className="font-mono uppercase text-muted-foreground font-semibold text-[10px] block">
                     Privacy Visibility
                   </label>
                   <div className="grid grid-cols-3 gap-2">
@@ -373,13 +370,13 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
                               opt.value as any
                             )
                           }
-                          className={`p-2.5 rounded-xl border text-left flex flex-col items-start gap-1 transition-all ${
+                          className={`p-2 rounded-xl border text-left flex flex-col items-start gap-0.5 transition-all ${
                             isSelected
                               ? 'bg-primary/10 border-primary text-primary font-bold shadow-sm'
                               : 'bg-surface-0 border-border-subtle text-muted-foreground hover:text-foreground hover:border-border-muted'
                           }`}
                         >
-                          <div className="flex items-center gap-1.5 text-xs">
+                          <div className="flex items-center gap-1 text-xs">
                             <Icon className="w-3.5 h-3.5" />
                             <span>{opt.label}</span>
                           </div>
@@ -395,12 +392,12 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-4 border-t border-border-subtle">
+        <div className="flex items-center justify-between pt-3 border-t border-border-subtle">
           <p className="text-[11px] text-muted-foreground font-mono">
             Ready to render & stream <span className="text-primary font-bold">{selectedIds.length}</span> clip{selectedIds.length > 1 ? 's' : ''} to YouTube.
           </p>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <Button variant="ghost" size="sm" onClick={onClose} className="text-xs">
               Cancel
             </Button>
@@ -409,7 +406,7 @@ export const PublishConfirmModal: React.FC<PublishConfirmModalProps> = ({
               size="md"
               disabled={selectedIds.length === 0}
               onClick={handleConfirm}
-              className="gap-2 font-bold shadow-glow-sm"
+              className="gap-2 font-bold shadow-glow-sm text-xs"
             >
               <UploadCloud className="w-4 h-4" />
               <span>Confirm & Upload ({selectedIds.length})</span>
