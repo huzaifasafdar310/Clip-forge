@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, UploadCloud, Undo, Share2 } from 'lucide-react';
+import { Download, UploadCloud, Film, Sparkles, Check, Loader2 } from 'lucide-react';
 import { Clip, CaptionStyle } from '@/types/api';
 import { AspectRatio, AspectRatioSwitcher } from './AspectRatioSwitcher';
 import { SegmentList } from './SegmentList';
@@ -11,6 +11,7 @@ import { ExportModal } from './ExportModal';
 import { Button } from '@/components/ui/Button';
 import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { storageService } from '@/services/storageService';
 
 interface StudioEditorProps {
   clips: Clip[];
@@ -26,10 +27,15 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
   onStartUploadJob,
 }) => {
   const { isAuthenticated, login } = useAuth();
-  const [clips, setClips] = useState<Clip[]>(initialClips);
-  const [activeClipId, setActiveClipId] = useState<number | null>(
-    initialActiveClipId || (initialClips.length > 0 ? initialClips[0].id : null)
-  );
+  const [clips, setClips] = useState<Clip[]>(() => {
+    if (initialClips && initialClips.length > 0) return initialClips;
+    return storageService.getClips();
+  });
+  const [activeClipId, setActiveClipId] = useState<number | null>(() => {
+    if (initialActiveClipId) return initialActiveClipId;
+    const current = initialClips && initialClips.length > 0 ? initialClips : storageService.getClips();
+    return current.length > 0 ? current[0].id : null;
+  });
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('9:16');
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>('tiktok_pop');
@@ -40,14 +46,27 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(30);
 
-  // Export Modal state
+  // Rendering & Export state
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
+  const [isRendering, setIsRendering] = useState<boolean>(false);
+  const [renderProgress, setRenderProgress] = useState<number>(0);
+  const [renderStatusText, setRenderStatusText] = useState<string>('');
 
   // Sync incoming clips
   useEffect(() => {
-    setClips(initialClips);
-    if (!activeClipId && initialClips.length > 0) {
-      setActiveClipId(initialClips[0].id);
+    if (initialClips && initialClips.length > 0) {
+      setClips(initialClips);
+      if (!activeClipId) {
+        setActiveClipId(initialClips[0].id);
+      }
+    } else {
+      const stored = storageService.getClips();
+      if (stored.length > 0) {
+        setClips(stored);
+        if (!activeClipId) {
+          setActiveClipId(stored[0].id);
+        }
+      }
     }
   }, [initialClips]);
 
@@ -80,24 +99,76 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
     onClipsUpdated?.(updatedClips);
   };
 
-  const handleDirectDownload = () => {
-    if (!activeClip) return;
-    const url = api.getClipDownloadUrl(activeClip.id);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `clip_${activeClip.id}.mp4`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Render the active clip into a vertical 9:16 Blob
+  const handleRenderActiveClip = async (): Promise<string> => {
+    if (!activeClip) throw new Error('No active clip selected');
+    if (activeClip.render_status === 'rendered' && activeClip.file_path?.startsWith('blob:')) {
+      return activeClip.file_path;
+    }
+
+    setIsRendering(true);
+    setRenderProgress(10);
+    setRenderStatusText('Slicing video frame stream & cropping to 9:16 vertical...');
+
+    try {
+      const result = await api.renderClip(activeClip.id, (percent) => {
+        setRenderProgress(percent);
+        setRenderStatusText(`Burning kinetic typography subtitles (${percent}%)...`);
+      });
+
+      const updatedClips = clips.map((c) => (c.id === activeClip.id ? result.clip : c));
+      setClips(updatedClips);
+      onClipsUpdated?.(updatedClips);
+
+      setRenderProgress(100);
+      setRenderStatusText('Render completed!');
+      setTimeout(() => setIsRendering(false), 600);
+
+      return result.url;
+    } catch (err: any) {
+      setIsRendering(false);
+      alert(`Render note: ${err.message}`);
+      throw err;
+    }
   };
 
-  const handlePostToYouTube = () => {
+  // Direct Download with on-the-fly rendering if unrendered
+  const handleDirectDownload = async () => {
+    if (!activeClip) return;
+    try {
+      let downloadUrl = activeClip.file_path;
+      if (activeClip.render_status !== 'rendered' || !downloadUrl || !downloadUrl.startsWith('blob:')) {
+        downloadUrl = await handleRenderActiveClip();
+      }
+
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `clip_${activeClip.id}_9x16.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err: any) {
+      console.error('Download error:', err);
+    }
+  };
+
+  // Post to YouTube with validation
+  const handlePostToYouTube = async () => {
     if (!isAuthenticated) {
       login();
       return;
     }
-    if (activeClip && onStartUploadJob) {
-      onStartUploadJob([activeClip]);
+    if (!activeClip) return;
+
+    try {
+      if (activeClip.render_status !== 'rendered') {
+        await handleRenderActiveClip();
+      }
+      if (onStartUploadJob) {
+        onStartUploadJob([activeClip]);
+      }
+    } catch (err: any) {
+      console.error('YouTube post prep error:', err);
     }
   };
 
@@ -115,11 +186,23 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Export / Render Modal Trigger */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsExportOpen(true)}
+            disabled={!activeClip || isRendering}
+            className="text-xs font-mono"
+          >
+            <Film className="w-3.5 h-3.5 text-primary" />
+            <span>Export & Render</span>
+          </Button>
+
           <Button
             size="sm"
             variant="outline"
             onClick={handleDirectDownload}
-            disabled={!activeClip}
+            disabled={!activeClip || isRendering}
             className="text-xs font-mono"
           >
             <Download className="w-3.5 h-3.5" />
@@ -130,7 +213,7 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
             size="sm"
             variant="primary"
             onClick={handlePostToYouTube}
-            disabled={!activeClip}
+            disabled={!activeClip || isRendering}
             className="text-xs font-bold"
           >
             <UploadCloud className="w-3.5 h-3.5" />
@@ -140,7 +223,26 @@ export const StudioEditor: React.FC<StudioEditorProps> = ({
       </div>
 
       {/* 3-Column Workspace */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden bg-surface-0">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden bg-surface-0 relative">
+        {/* Rendering Overlay */}
+        {isRendering && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-foreground">In-Browser Video Engine</h3>
+              <p className="text-xs text-muted-foreground font-mono">{renderStatusText}</p>
+            </div>
+            <div className="w-64 bg-surface-2 h-2 rounded-full overflow-hidden border border-border-subtle">
+              <div
+                className="bg-primary h-full transition-all duration-300 rounded-full"
+                style={{ width: `${renderProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Left Column: Segments List (3 Cols) */}
         <div className="lg:col-span-3 h-full overflow-hidden">
           <SegmentList

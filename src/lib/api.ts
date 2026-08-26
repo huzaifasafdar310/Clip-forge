@@ -19,6 +19,9 @@ import curatedChannelsData from '@/data/curatedChannels.json';
 
 const activeJobs: Record<string, JobStatusResponse> = {};
 
+// Cache for rendered video Blobs in memory during session
+const renderedBlobsCache: Record<number, Blob> = {};
+
 export class ApiError extends Error {
   status?: number;
   constructor(message: string, status?: number) {
@@ -29,24 +32,50 @@ export class ApiError extends Error {
 }
 
 export const api = {
-  // 1. Analyze YouTube Video URL
-  async analyzeYoutubeUrl(url: string, numClips: number = 3): Promise<AnalyzeResponse> {
+  // 1. Analyze YouTube Video URL with Real Pipeline Progress
+  async analyzeYoutubeUrl(
+    url: string,
+    numClips: number = 3,
+    onProgress?: (statusMessage: string, progressPercent: number, step?: number) => void
+  ): Promise<AnalyzeResponse> {
+    onProgress?.('Fetching YouTube video metadata & thumbnail...', 15, 1);
     const details = await youtubeService.getVideoDetails(url);
-    const segments = await aiService.analyzeTranscriptHighlights(
-      '',
-      details.durationSeconds,
-      details.title,
-      numClips
-    );
 
+    onProgress?.('Extracting video transcript & spoken dialog...', 35, 2);
+    const transcriptResult = await youtubeService.fetchTranscript(details.videoId);
+
+    let segments: any[];
+    if (transcriptResult.available && transcriptResult.transcript.length > 30) {
+      onProgress?.('Groq AI (LLaMA 3.3 70B): Scoring viral hooks & highlight moments...', 60, 3);
+      segments = await aiService.analyzeTranscriptHighlights(
+        transcriptResult.transcript,
+        details.durationSeconds,
+        details.title,
+        numClips
+      );
+    } else {
+      onProgress?.('Captions unavailable — applying smart temporal segmentation...', 60, 3);
+      segments = await aiService.analyzeTranscriptHighlights(
+        '',
+        details.durationSeconds,
+        details.title,
+        numClips
+      );
+    }
+
+    onProgress?.('Generating viral titles, descriptions & SEO tags...', 85, 4);
     const generatedClips: Clip[] = [];
 
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
+      const segmentTranscript = transcriptResult.available
+        ? transcriptResult.getSegmentText(seg.start_seconds, seg.end_seconds)
+        : '';
+
       const metadata = await aiService.generateClipMetadata(
         details.title,
         details.description,
-        seg.reasoning,
+        segmentTranscript || seg.reasoning,
         seg.startTime,
         seg.endTime,
         i + 1
@@ -68,8 +97,10 @@ export const api = {
         description: metadata.description,
         suggestedTags: metadata.tags,
         reasoning: seg.reasoning,
+        transcript_text: segmentTranscript,
         privacyStatus: 'public',
-        status: 'completed',
+        status: 'analyzed',
+        render_status: 'unrendered',
         transcript_fallback: seg.transcript_fallback,
         has_captions: true,
         caption_style: 'tiktok_pop',
@@ -77,13 +108,13 @@ export const api = {
         caption_color: '#FFFF00',
         caption_language: 'auto',
         progress: 100,
-        file_path: details.thumbnailUrl,
       };
 
       generatedClips.push(clip);
     }
 
     storageService.addClips(generatedClips);
+    onProgress?.('Pipeline complete! Clips ready in Studio.', 100, 4);
 
     return {
       metadata: {
@@ -97,12 +128,19 @@ export const api = {
     };
   },
 
-  // 2. Analyze Local Video File
-  async analyzeLocalVideo(file: File, numClips: number = 3, title?: string): Promise<AnalyzeResponse> {
+  // 2. Analyze Local Video File with Real Pipeline Progress
+  async analyzeLocalVideo(
+    file: File,
+    numClips: number = 3,
+    title?: string,
+    onProgress?: (statusMessage: string, progressPercent: number, step?: number) => void
+  ): Promise<AnalyzeResponse> {
+    onProgress?.('Probing local video file & dimensions...', 20, 1);
     const videoMeta = await videoEngine.probeVideoFile(file);
     const videoTitle = title || file.name.replace(/\.[^/.]+$/, '');
     const localUrl = URL.createObjectURL(file);
 
+    onProgress?.('Applying smart segment split on video duration...', 50, 2);
     const segments = await aiService.analyzeTranscriptHighlights(
       '',
       videoMeta.duration,
@@ -110,6 +148,7 @@ export const api = {
       numClips
     );
 
+    onProgress?.('Generating optimized clip metadata...', 80, 3);
     const generatedClips: Clip[] = [];
 
     for (let i = 0; i < segments.length; i++) {
@@ -140,8 +179,9 @@ export const api = {
         suggestedTags: metadata.tags,
         reasoning: seg.reasoning,
         privacyStatus: 'public',
-        status: 'completed',
-        transcript_fallback: seg.transcript_fallback,
+        status: 'analyzed',
+        render_status: 'unrendered',
+        transcript_fallback: true,
         has_captions: true,
         caption_style: 'tiktok_pop',
         caption_font: 'Arial Black',
@@ -157,6 +197,7 @@ export const api = {
     }
 
     storageService.addClips(generatedClips);
+    onProgress?.('Local video analysis complete!', 100, 4);
 
     return {
       metadata: {
@@ -172,8 +213,61 @@ export const api = {
     };
   },
 
-  // 3. Start YouTube Upload Job
-  async startUploadJob(clips: Clip[], accessToken: string): Promise<{ job_id: string }> {
+  // 3. Render Vertical 9:16 Clip In-Browser
+  async renderClip(
+    clipId: number,
+    onProgress?: (percent: number) => void
+  ): Promise<{ clip: Clip; blob: Blob; url: string }> {
+    const clips = storageService.getClips();
+    const clip = clips.find((c) => c.id === clipId);
+    if (!clip) throw new Error(`Clip ${clipId} not found in library.`);
+
+    // If already rendered and blob exists in cache
+    if (clip.render_status === 'rendered' && renderedBlobsCache[clipId] && clip.file_path) {
+      return { clip, blob: renderedBlobsCache[clipId], url: clip.file_path };
+    }
+
+    storageService.updateClip(clipId, { render_status: 'rendering' });
+
+    try {
+      const sourceUrl = clip.file_path || clip.video_url;
+      const captionText = clip.transcript_text || clip.title;
+
+      const blob = await videoEngine.renderVerticalClip(
+        sourceUrl,
+        clip.start_seconds,
+        clip.end_seconds,
+        captionText,
+        {
+          style: clip.caption_style,
+          font: clip.caption_font,
+          color: clip.caption_color,
+        },
+        onProgress
+      );
+
+      const blobUrl = URL.createObjectURL(blob);
+      renderedBlobsCache[clipId] = blob;
+
+      const updated = storageService.updateClip(clipId, {
+        render_status: 'rendered',
+        status: 'completed',
+        file_path: blobUrl,
+      });
+
+      return { clip: updated || clip, blob, url: blobUrl };
+    } catch (err: any) {
+      storageService.updateClip(clipId, { render_status: 'failed', error: err.message });
+      throw err;
+    }
+  },
+
+  // 4. Start YouTube Upload Job
+  async startUploadJob(
+    clips: Clip[],
+    accessToken: string,
+    onProgress?: (stage: string, percent: number) => void
+  ): Promise<{ job_id: string }> {
     const jobId = `upload_${Date.now()}`;
 
     activeJobs[jobId] = {
@@ -188,13 +282,16 @@ export const api = {
     setTimeout(async () => {
       for (const clip of clips) {
         try {
-          let blob: Blob;
-          if (clip.file_path && clip.file_path.startsWith('blob:')) {
-            const res = await fetch(clip.file_path);
-            blob = await res.blob();
-          } else {
-            blob = new Blob([new Uint8Array(1024)], { type: 'video/mp4' });
+          // Verify or trigger render before uploading
+          let blob = renderedBlobsCache[clip.id];
+
+          if (!blob) {
+            onProgress?.(`Rendering 9:16 vertical clip '${clip.title}'...`, 30);
+            const renderResult = await api.renderClip(clip.id);
+            blob = renderResult.blob;
           }
+
+          onProgress?.(`Uploading '${clip.title}' to YouTube Shorts...`, 70);
 
           const result = await uploadService.uploadShortToYoutube(blob, {
             title: clip.title,
@@ -206,13 +303,14 @@ export const api = {
 
           storageService.updateClip(clip.id, {
             status: 'completed',
+            render_status: 'rendered',
             youtube_url: result.youtubeUrl,
           });
         } catch (e: any) {
           console.error(`Upload error for clip ${clip.id}:`, e);
           storageService.updateClip(clip.id, {
             status: 'failed',
-            error: e.message || 'Upload failed',
+            error: e.message || 'YouTube Upload Failed',
           });
         }
       }
@@ -227,7 +325,7 @@ export const api = {
     return { job_id: jobId };
   },
 
-  // 4. Job Status
+  // 5. Job Status
   async getJobStatus(jobId: string): Promise<JobStatusResponse> {
     if (activeJobs[jobId]) {
       return activeJobs[jobId];
@@ -242,7 +340,7 @@ export const api = {
     };
   },
 
-  // 5. Update Clip Caption Options
+  // 6. Update Clip Caption Options
   async updateClipCaptionStyle(
     clipId: number,
     optionsOrStyle: Partial<Clip> | CaptionStyle | string,
@@ -264,20 +362,17 @@ export const api = {
     return { success: !!updated, clip: updated || undefined };
   },
 
-  // 6. Download Clip
-  async downloadClip(clipId: number): Promise<Blob> {
+  // 7. Download Clip URL
+  getClipDownloadUrl(clipId: number): string {
     const clips = storageService.getClips();
     const clip = clips.find((c) => c.id === clipId);
-    if (clip && clip.file_path) {
-      try {
-        const res = await fetch(clip.file_path);
-        return await res.blob();
-      } catch {}
+    if (clip && clip.file_path && clip.file_path.startsWith('blob:')) {
+      return clip.file_path;
     }
-    return new Blob(['Video clip binary'], { type: 'video/mp4' });
+    return '';
   },
 
-  // 7. Projects & Clips Management
+  // 8. Projects & Clips Management
   async getProjects(): Promise<ProjectsResponse> {
     const clips = storageService.getClips();
     const totalClips = clips.length;
@@ -299,7 +394,7 @@ export const api = {
     return { success: true, message: `Clip ${clipId} deleted.` };
   },
 
-  // 8. Source Channels & Discovery
+  // 9. Source Channels & Discovery (Preview Data)
   async getSourceChannels(): Promise<{ success: boolean; channels: SourceChannel[] }> {
     const channels = storageService.getSourceChannels();
     return { success: true, channels };
@@ -312,7 +407,7 @@ export const api = {
       channel_thumbnail: c.channel_thumbnail || '',
       subscriber_count: c.subscriber_count || '100K+',
       video_count: c.video_count || '100+',
-      sample_video_title: `${c.channel_title} Popular Video`,
+      sample_video_title: `${c.channel_title} Popular Highlights`,
       sample_video_id: 'sample_id',
       license: 'Creative Commons (Reuse Allowed)',
     }));
@@ -370,7 +465,7 @@ export const api = {
     return { success: true, message: 'Source channel removed.' };
   },
 
-  // 9. Automation Schedule Rules & Scheduler
+  // 10. Automation Schedule Rules
   async getScheduleRules(): Promise<{ success: boolean; rules: ScheduleRule[] }> {
     const rules = storageService.getScheduleRules();
     return { success: true, rules };
@@ -408,11 +503,11 @@ export const api = {
   },
 
   async pauseScheduler(): Promise<{ success: boolean; message: string }> {
-    return { success: true, message: 'Scheduler paused.' };
+    return { success: true, message: 'Scheduler preview paused.' };
   },
 
   async startScheduler(): Promise<{ success: boolean; message: string }> {
-    return { success: true, message: 'Scheduler started.' };
+    return { success: true, message: 'Scheduler preview active.' };
   },
 
   async runScheduleRuleNow(id: number): Promise<{ success: boolean; message: string }> {
@@ -428,16 +523,16 @@ export const api = {
       status: 'completed',
       source_videos_processed: [
         {
-          video_id: 'auto_video_1',
+          video_id: 'sample_video',
           title: `Auto Harvest: ${rule.name}`,
           channel_title: 'Creative Commons Creator',
-          published_shorts: [{ clip_id: Date.now(), title: `${rule.name} Short #1`, url: 'https://youtube.com/shorts/sample' }],
+          published_shorts: [{ clip_id: Date.now(), title: `${rule.name} Short`, url: 'https://youtube.com/shorts' }],
         },
       ],
       error_message: null,
     });
 
-    return { success: true, message: `Schedule rule '${rule.name}' triggered successfully.` };
+    return { success: true, message: `Schedule rule '${rule.name}' triggered.` };
   },
 
   async triggerAllScheduledRules(): Promise<{ success: boolean; message: string }> {
@@ -446,10 +541,6 @@ export const api = {
       await this.runScheduleRuleNow(r.id);
     }
     return { success: true, message: `Triggered ${rules.length} schedule rules.` };
-  },
-
-  getClipDownloadUrl(clipId: number): string {
-    return `#download-${clipId}`;
   },
 
   getClipStreamUrl(filePathOrName: string): string {
@@ -468,4 +559,3 @@ export const api = {
     return { success: true };
   },
 };
-

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Flame, Play } from 'lucide-react';
+import { Sparkles, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 export const LiveDemoSection: React.FC = () => {
@@ -12,13 +12,13 @@ export const LiveDemoSection: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
         <div className="space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary/10 text-primary text-xs font-mono rounded-full border border-primary/20">
-            <Sparkles className="w-3.5 h-3.5" /> AI Speaker Centering
+            <Sparkles className="w-3.5 h-3.5" /> 9:16 Vertical Reframe
           </div>
           <h2 className="text-3xl sm:text-5xl font-black text-foreground leading-tight">
             Never manually crop horizontal footage again.
           </h2>
           <p className="text-base text-muted-foreground leading-relaxed">
-            Our pipeline automatically tracks faces and conversational centerpoints, formatting 16:9 widescreen footage into high-fidelity 9:16 vertical video suitable for mobile feeds.
+            Our in-browser video engine automatically centers widescreen video content and renders high-fidelity 9:16 vertical MP4s optimized for mobile feeds.
           </p>
           <Button
             size="lg"
@@ -33,7 +33,7 @@ export const LiveDemoSection: React.FC = () => {
           <div className="w-64 h-[360px] bg-black rounded-2xl border-2 border-primary/40 flex flex-col items-center justify-between p-4 shadow-glow-sm relative">
             <div className="flex justify-between items-center w-full z-10 text-[10px] font-mono text-primary">
               <span className="px-2 py-0.5 rounded bg-black/60 backdrop-blur-md">9:16 Vertical</span>
-              <span className="px-2 py-0.5 rounded bg-black/60 backdrop-blur-md">1080x1920</span>
+              <span className="px-2 py-0.5 rounded bg-black/60 backdrop-blur-md">720x1280</span>
             </div>
 
             <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-400/20 to-yellow-600/30 border border-primary flex items-center justify-center my-auto animate-pulse">
@@ -58,10 +58,10 @@ export const LiveDemoSection: React.FC = () => {
             </span>
             <div className="flex flex-wrap gap-2 justify-center">
               <span className="px-3 py-1 bg-primary/10 border border-primary/30 rounded-full text-xs text-primary font-mono font-bold">
-                Hormozi Kinetic
+                TikTok Pop
               </span>
               <span className="px-3 py-1 bg-secondary/10 border border-secondary/30 rounded-full text-xs text-secondary font-mono font-bold">
-                Whisper Timestamps
+                Live Subtitles
               </span>
             </div>
           </div>
@@ -69,13 +69,13 @@ export const LiveDemoSection: React.FC = () => {
 
         <div className="order-1 lg:order-2 space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-secondary/10 text-secondary text-xs font-mono rounded-full border border-secondary/20">
-            <Flame className="w-3.5 h-3.5" /> Kinetic Auto-Captions
+            <Flame className="w-3.5 h-3.5" /> Kinetic Typography
           </div>
           <h2 className="text-3xl sm:text-5xl font-black text-foreground leading-tight">
             Subtitles that pop & keep viewers watching.
           </h2>
           <p className="text-base text-muted-foreground leading-relaxed">
-            Whisper transcription generates millisecond word timestamps burned with hardware-accelerated FFmpeg ASS subtitle filters.
+            Dynamic captions rendered directly onto the video canvas with custom font weights, vibrant highlights, and dark contrast outlines.
           </p>
           <Button
             size="lg"

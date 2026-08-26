@@ -1,82 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { GoogleUser, AuthContextType } from '@/types/auth';
-import { api } from '@/lib/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Preferred source: VITE_GOOGLE_CLIENT_ID from build-time environment,
-// falling back to the hardcoded default client ID if the env var is not set.
-const DEFAULT_CLIENT_ID =
-  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-  '115243955025-34mt0dlogqe8pu8vjfqfg6l6s4v6j0qh.apps.googleusercontent.com';
+// Primary source: Build-time VITE_GOOGLE_CLIENT_ID environment variable
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<GoogleUser | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [clientId, setClientId] = useState<string>(DEFAULT_CLIENT_ID);
+  const [clientId] = useState<string>(CLIENT_ID);
   const [tokenClient, setTokenClient] = useState<any>(null);
 
-  // 1. Fetch public config (Google Client ID) & restore persistent user session
-  useEffect(() => {
-    const initAuth = async () => {
-      // Step A: Attempt to fetch real Google Client ID from backend /api/config first (if backend is deployed & reachable)
-      try {
-        const res = await fetch('/api/config');
-        if (res.ok) {
-          const contentType = res.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const data = await res.json();
-            if (data?.google_client_id && typeof data.google_client_id === 'string' && data.google_client_id.trim()) {
-              setClientId(data.google_client_id.trim());
-            }
-          }
-        }
-      } catch (err) {
-        // Backend not reachable — fallback to VITE_GOOGLE_CLIENT_ID / DEFAULT_CLIENT_ID seamlessly
-        console.warn('Could not fetch backend config, using default Client ID:', err);
-      }
-
-      // Step B: Check Database for existing persistent session
-      try {
-        const authMe = await api.getCurrentUser();
-        if (authMe?.is_authenticated && authMe?.user && authMe?.access_token) {
-          const dbUser: GoogleUser = {
-            accessToken: authMe.access_token,
-            name: authMe.user.name || 'YouTube Creator',
-            email: authMe.user.email,
-            avatarUrl: authMe.user.picture,
-            channelTitle: authMe.user.channel_title,
-            expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-          };
-          setUser(dbUser);
-          localStorage.setItem('clipai_user', JSON.stringify(dbUser));
-          return;
-        }
-      } catch {
-        // Session check failed or not logged in — safe to ignore
-      }
-
-      // Step C: Restore from localStorage if present and valid
-      try {
-        const saved = localStorage.getItem('clipai_user');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed?.accessToken && (parsed.expiresAt ? parsed.expiresAt > Date.now() : true)) {
-            setUser(parsed);
-          } else {
-            localStorage.removeItem('clipai_user');
-          }
-        }
-      } catch {
-        localStorage.removeItem('clipai_user');
-      }
-    };
-
-    initAuth();
-  }, []);
-
-  // 2. Initialize Google Token Client when Google script loads and clientId is ready
+  // Initialize Google Token Client when Google script loads and clientId is configured
   useEffect(() => {
     if (!clientId) return;
 
@@ -105,10 +42,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               if (response.access_token) {
                 setAuthError(null);
+                const expiresInSec = Number(response.expires_in) || 3600;
                 const newUser: GoogleUser = {
                   accessToken: response.access_token,
                   name: 'YouTube Creator',
-                  expiresAt: Date.now() + (Number(response.expires_in) || 3600) * 1000,
+                  expiresAt: Date.now() + expiresInSec * 1000,
                 };
 
                 // Fetch Google profile details (name, email, avatar) directly from Google API
@@ -143,19 +81,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   }
                 } catch {}
 
-                // Save to local storage for persistence across visits
-                localStorage.setItem('clipai_user', JSON.stringify(newUser));
+                // Security: Keep OAuth access token strictly in memory React state (not written to localStorage)
                 setUser(newUser);
-
-                // Persist token in backend DB if available
-                try {
-                  await api.loginUser({
-                    access_token: response.access_token,
-                    expires_in: Number(response.expires_in) || 3600,
-                  });
-                } catch {
-                  // Silent fallback
-                }
               }
             },
             error_callback: (err: any) => {
@@ -187,6 +114,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = () => {
     setAuthError(null);
+    if (!clientId) {
+      setAuthError(
+        'Google OAuth Client ID is not configured. Please set VITE_GOOGLE_CLIENT_ID in your environment settings.'
+      );
+      return;
+    }
+
     if (tokenClient) {
       setIsLoggingIn(true);
       try {
@@ -205,10 +139,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    localStorage.removeItem('clipai_user');
     setUser(null);
     setAuthError(null);
-    api.logoutUser().catch(() => {});
   };
 
   const clearAuthError = () => {

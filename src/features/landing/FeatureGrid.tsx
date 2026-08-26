@@ -7,26 +7,26 @@ export const FeatureGrid: React.FC = () => {
     {
       icon: Scissors,
       title: 'Groq AI Highlight Scoring',
-      desc: 'LLaMA 3.3 70B evaluates transcript flow to pinpoint peak conversational hooks and punchlines.',
-      tag: '45-60s Optimal',
+      desc: 'LLaMA 3.3 70B evaluates transcript dialog to pinpoint peak conversational hooks, insights, and viral moments.',
+      tag: '30-60s Optimal',
     },
     {
       icon: Type,
       title: 'Kinetic Dynamic Captions',
-      desc: 'Word-by-word synchronized subtitles powered by Whisper ASR and customizable creator styling.',
+      desc: 'High-impact subtitles styled with TikTok Pop, Karaoke, and Bold Stroke presets burned directly in the browser.',
       tag: 'TikTok Pop Style',
     },
     {
       icon: Smartphone,
       title: '9:16 Smart Reframe',
-      desc: 'High-performance FFmpeg scaling and padding ready for Shorts, Reels, and TikTok feeds.',
-      tag: '1080x1920 HD',
+      desc: 'Client-side HTML5 Canvas and MediaStream cropping ready for Shorts, Reels, and TikTok feeds.',
+      tag: '720x1280 & 1080x1920',
     },
     {
       icon: Share2,
-      title: '1-Click Multi-Publishing',
-      desc: 'Direct integration with Google OAuth 2.0 and YouTube Data API v3 for effortless posting.',
-      tag: 'Auto-Shorts',
+      title: 'Direct Shorts Publishing',
+      desc: 'Direct integration with Google OAuth 2.0 and YouTube Data API v3 for seamless in-browser upload.',
+      tag: 'YouTube Shorts',
     },
   ];
 
@@ -37,7 +37,7 @@ export const FeatureGrid: React.FC = () => {
           Built for creators who value retention & speed.
         </h2>
         <p className="text-sm text-muted-foreground">
-          Every tool you need to turn raw long-form footage into published viral short-form assets.
+          Turn long-form videos into engaging 9:16 short-form assets with 100% in-browser processing.
         </p>
       </div>
 

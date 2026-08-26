@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StudioEditor } from '@/features/studio/StudioEditor';
 import { ProcessingModal } from '@/features/studio/ProcessingModal';
 import { Clip } from '@/types/api';
 import { api } from '@/lib/api';
+import { storageService } from '@/services/storageService';
 import { useAuth } from '@/context/AuthContext';
 
 interface StudioPageProps {
@@ -22,6 +23,17 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   const [uploadProgress, setUploadProgress] = useState(10);
   const [uploadStatus, setUploadStatus] = useState('Initiating background queue...');
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Restore clips from storage if navigating directly or refreshing /app/studio
+  useEffect(() => {
+    if (!clips || clips.length === 0) {
+      const stored = storageService.getClips();
+      if (stored && stored.length > 0) {
+        onClipsUpdated(stored);
+      }
+    }
+  }, [clips, onClipsUpdated]);
+
 
   const handleStartUploadJob = async (selectedClips: Clip[]) => {
     if (!user?.accessToken) return;

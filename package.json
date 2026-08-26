@@ -1,5 +1,6 @@
 {
-  "name": "clipai-studio-frontend",
+  "name": "clipai-studio",
+
   "private": true,
   "version": "2.0.0",
   "type": "module",

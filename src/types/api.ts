@@ -35,8 +35,10 @@ export interface Clip {
   description: string;
   suggestedTags: string[];
   reasoning?: string;
+  transcript_text?: string;
   privacyStatus: PrivacyStatus;
   status: ClipStatus;
+  render_status?: 'unrendered' | 'rendering' | 'rendered' | 'failed';
   error?: string | null;
   youtube_url?: string | null;
   transcript_fallback: boolean;
@@ -50,6 +52,7 @@ export interface Clip {
   local_source?: boolean;
   source_file?: string;
 }
+
 
 export interface AnalyzeResponse {
   metadata: VideoMetadata;

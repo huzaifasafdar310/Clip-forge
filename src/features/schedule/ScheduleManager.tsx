@@ -346,8 +346,9 @@ export const ScheduleManager: React.FC = () => {
             Scheduled Auto-Publishing
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-            Monitor 98+ top verified creators & Creative Commons sources, automatically generate vertical clips with kinetic Whisper subtitles, and upload directly to your YouTube channel at scheduled times.
+            Configure automated clip creation rules for your tracked YouTube channels and Creative Commons creators. Client-side automation executes while this application is active.
           </p>
+
 
           {nextRunTime && (
             <p className="text-xs font-mono text-primary flex items-center gap-1.5">

@@ -89,6 +89,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           </p>
         </div>
 
+        {/* Security Notice */}
+        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 leading-relaxed">
+          <span className="font-bold">🔒 Client-Side Key Notice:</span> Your API keys are stored locally in your browser and used for direct HTTPS requests to <code className="text-amber-200">api.groq.com</code> and Google APIs. Keys are never sent to any intermediary backend.
+        </div>
+
+
         {/* Footer actions */}
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-border-subtle">
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

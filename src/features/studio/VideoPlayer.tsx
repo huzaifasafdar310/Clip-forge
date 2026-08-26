@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Play, Pause, Sparkles, Youtube, Film } from 'lucide-react';
+import { Play, Pause, Sparkles, Youtube, Film, CheckCircle } from 'lucide-react';
 import { AspectRatio } from './AspectRatioSwitcher';
 import { CaptionStyle, Clip } from '@/types/api';
 import { cn, formatSecondsToTimestamp } from '@/lib/utils';
@@ -51,9 +51,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Caption styling based on preset
   const renderCaptionOverlay = () => {
-    const textToDisplay = clip?.title
-      ? clip.title.toUpperCase()
-      : 'THIS IS A VIRAL SHORT CLIP 🔥';
+    const textToDisplay =
+      clip?.transcript_text ||
+      clip?.title ||
+      'THIS IS A VIRAL SHORT CLIP 🔥';
 
     if (captionStyle === 'tiktok_pop') {
       return (
@@ -92,19 +93,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Determine media source
-  const isLocalSource = clip?.local_source || clip?.video_url?.startsWith('local:');
-  const isCutRendered = !!clip?.file_path;
+  // Determine media source with accurate render_status gating
+  const isCutRendered =
+    clip?.render_status === 'rendered' &&
+    !!clip?.file_path &&
+    clip.file_path.startsWith('blob:');
+
+  const isLocalSource =
+    clip?.local_source ||
+    clip?.video_url?.startsWith('blob:') ||
+    clip?.video_url?.startsWith('data:');
 
   let directVideoUrl: string | null = null;
   if (isCutRendered && clip?.file_path) {
-    directVideoUrl = api.getClipStreamUrl(clip.file_path);
-  } else if (isLocalSource && (clip?.source_file || clip?.video_url)) {
-    directVideoUrl = api.getClipStreamUrl(clip.source_file || clip.video_url);
+    directVideoUrl = clip.file_path;
+  } else if (isLocalSource && (clip?.video_url || clip?.file_path?.startsWith('blob:'))) {
+    directVideoUrl = clip.video_url || clip.file_path || null;
   }
 
   // YouTube embed fallback for un-cut YouTube clips
-  const isYouTubeClip = !isLocalSource && !isCutRendered && !!clip?.video_id;
+  const isYouTubeClip = !isCutRendered && !isLocalSource && !!clip?.video_id;
   const youtubeEmbedUrl = isYouTubeClip
     ? `https://www.youtube-nocookie.com/embed/${clip.video_id}?start=${Math.floor(
         clip.start_seconds
@@ -123,15 +131,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         {/* Top Info Overlays */}
         <div className="flex justify-between items-center z-20 pointer-events-none">
           <span className="px-2.5 py-1 rounded-full bg-black/80 backdrop-blur-md text-[10px] font-mono text-primary border border-primary/30 flex items-center gap-1.5">
-            {isYouTubeClip ? (
+            {isCutRendered ? (
+              <>
+                <CheckCircle className="w-3 h-3 text-cyan-400" />
+                <span className="text-cyan-400">9:16 Rendered Cut</span>
+              </>
+            ) : isYouTubeClip ? (
               <>
                 <Youtube className="w-3 h-3 text-red-500 fill-current" />
-                <span>YouTube Highlight Segment</span>
+                <span>YouTube Live Preview ({clip?.startTime}-{clip?.endTime})</span>
               </>
             ) : (
               <>
                 <Sparkles className="w-3 h-3" />
-                <span>AI Speaker Reframe</span>
+                <span>Local Video Preview (Unrendered)</span>
               </>
             )}
           </span>

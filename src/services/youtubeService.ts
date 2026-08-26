@@ -10,6 +10,19 @@ export interface YoutubeVideoDetails {
   channelTitle: string;
 }
 
+export interface TranscriptItem {
+  start: number;
+  dur: number;
+  text: string;
+}
+
+export interface TranscriptResult {
+  available: boolean;
+  transcript: string;
+  items: TranscriptItem[];
+  getSegmentText: (startSec: number, endSec: number) => string;
+}
+
 export function extractYoutubeId(url: string): string | null {
   if (!url) return null;
   const clean = url.trim();
@@ -36,6 +49,19 @@ export function parseIsoDuration(durationStr: string): number {
   const minutes = parseInt(match[2] || '0', 10);
   const seconds = parseInt(match[3] || '0', 10);
   return hours * 3600 + minutes * 60 + seconds;
+}
+
+function decodeXmlEntities(str: string): string {
+  const txt = document.createElement('textarea');
+  txt.innerHTML = str;
+  return txt.value
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\n/g, ' ')
+    .trim();
 }
 
 export const youtubeService = {
@@ -77,11 +103,11 @@ export const youtubeService = {
           }
         }
       } catch (e) {
-        console.warn('YouTube Data API fetch failed, falling back to oEmbed:', e);
+        console.warn('YouTube Data API fetch note:', e);
       }
     }
 
-    // Fallback via oEmbed (Works with 0 API keys!)
+    // Fallback via oEmbed (Works with 0 API keys)
     try {
       const oembedUrl = `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`;
       const res = await fetch(oembedUrl);
@@ -91,7 +117,7 @@ export const youtubeService = {
           videoId,
           title: data.title || `YouTube Video (${videoId})`,
           description: `Video by ${data.author_name || 'YouTube Creator'}`,
-          durationSeconds: 300, // standard default fallback
+          durationSeconds: 300,
           thumbnailUrl: data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
           channelTitle: data.author_name || 'YouTube Creator',
         };
@@ -105,6 +131,71 @@ export const youtubeService = {
       durationSeconds: 300,
       thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       channelTitle: 'YouTube Creator',
+    };
+  },
+
+  async fetchTranscript(videoId: string): Promise<TranscriptResult> {
+    const urls = [
+      `https://video.google.com/timedtext?lang=en&v=${videoId}`,
+      `https://video.google.com/timedtext?lang=en-US&v=${videoId}`,
+      `https://video.google.com/timedtext?v=${videoId}`,
+    ];
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const xmlText = await res.text();
+        if (!xmlText || !xmlText.includes('<text')) continue;
+
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+        const textNodes = xmlDoc.getElementsByTagName('text');
+
+        if (textNodes.length === 0) continue;
+
+        const items: TranscriptItem[] = [];
+        const fullParts: string[] = [];
+
+        for (let i = 0; i < textNodes.length; i++) {
+          const node = textNodes[i];
+          const start = parseFloat(node.getAttribute('start') || '0');
+          const dur = parseFloat(node.getAttribute('dur') || '0');
+          const rawText = node.textContent || '';
+          const text = decodeXmlEntities(rawText);
+
+          if (text) {
+            items.push({ start, dur, text });
+            const mins = Math.floor(start / 60);
+            const secs = Math.floor(start % 60);
+            const ts = `[${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}]`;
+            fullParts.push(`${ts} ${text}`);
+          }
+        }
+
+        if (items.length > 0) {
+          return {
+            available: true,
+            transcript: fullParts.join(' '),
+            items,
+            getSegmentText: (startSec: number, endSec: number) => {
+              const matched = items
+                .filter((item) => item.start >= startSec - 1 && item.start <= endSec + 1)
+                .map((item) => item.text);
+              return matched.join(' ').trim();
+            },
+          };
+        }
+      } catch (err) {
+        console.warn('TimedText fetch note:', err);
+      }
+    }
+
+    return {
+      available: false,
+      transcript: '',
+      items: [],
+      getSegmentText: () => '',
     };
   },
 

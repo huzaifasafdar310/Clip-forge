@@ -27,82 +27,58 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onClipsLoaded }) => {
   const [statusMessage, setStatusMessage] = useState('Ingesting stream...');
   const [error, setError] = useState<string | null>(null);
 
-  const startPipelineSimulation = () => {
+  const handleAnalyzeYoutube = async (url: string) => {
+    setSourceLabel(url);
     setIsProcessing(true);
     setError(null);
     setStep(1);
     setProgress(15);
-    setStatusMessage('Ingesting video & audio stream (1080p60)...');
-
-    const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 85) {
-          clearInterval(timer);
-          return 85;
-        }
-        const next = prev + Math.floor(Math.random() * 8) + 4;
-        if (next >= 30 && next < 60) {
-          setStep(2);
-          setStatusMessage('Whisper ASR: Transcribing speech & detecting topic spikes...');
-        } else if (next >= 60 && next < 85) {
-          setStep(3);
-          setStatusMessage('Groq AI: Scoring virality hooks & transcript highlights...');
-        } else if (next >= 85) {
-          setStep(4);
-          setStatusMessage('Formatting 9:16 kinetic typography & metadata...');
-        }
-        return next;
-      });
-    }, 450);
-
-    return timer;
-  };
-
-  const handleAnalyzeYoutube = async (url: string) => {
-    setSourceLabel(url);
-    const timer = startPipelineSimulation();
+    setStatusMessage('Fetching YouTube metadata & captions...');
 
     try {
-      const data = await api.analyzeYoutubeUrl(url, 5);
-      clearInterval(timer);
-      setProgress(100);
-      setStep(4);
-      setStatusMessage(`Complete! ${data.clips.length} viral clips generated.`);
+      const data = await api.analyzeYoutubeUrl(url, 5, (msg, pct, stp) => {
+        setStatusMessage(msg);
+        setProgress(pct);
+        if (stp) setStep(stp);
+      });
 
       setTimeout(() => {
         setIsProcessing(false);
         onClipsLoaded(data.clips);
         navigate('/app/studio');
-      }, 700);
+      }, 600);
     } catch (err: any) {
-      clearInterval(timer);
       setError(err.message || 'Video analysis failed. Please verify the URL.');
     }
   };
 
   const handleSelectLocalFile = async (file: File) => {
     setSourceLabel(`Local: ${file.name}`);
-    const timer = startPipelineSimulation();
+    setIsProcessing(true);
+    setError(null);
+    setStep(1);
+    setProgress(20);
+    setStatusMessage('Probing video dimensions & duration...');
 
     try {
-      const data = await api.analyzeLocalVideo(file, 5);
-      clearInterval(timer);
-      setProgress(100);
-      setStep(4);
-      setStatusMessage(`Uploaded & analyzed! ${data.clips.length} clips ready.`);
+      const data = await api.analyzeLocalVideo(file, 5, undefined, (msg, pct, stp) => {
+        setStatusMessage(msg);
+        setProgress(pct);
+        if (stp) setStep(stp);
+      });
 
       setTimeout(() => {
         setIsProcessing(false);
         onClipsLoaded(data.clips);
         navigate('/app/studio');
-      }, 700);
+      }, 600);
     } catch (err: any) {
-      clearInterval(timer);
       setError(err.message || 'Local video upload failed.');
     }
   };
 
   return (
+
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Landing Navbar */}
       <header className="fixed top-0 w-full z-50 bg-surface-0/85 backdrop-blur-xl border-b border-border-subtle">
