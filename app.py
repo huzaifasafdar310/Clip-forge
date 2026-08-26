@@ -1367,8 +1367,9 @@ def trigger_all_scheduled_rules():
 if __name__ == '__main__':
     flask_env = os.getenv('FLASK_ENV', 'development')
     debug_mode = os.getenv('FLASK_DEBUG', '0').lower() in ['1', 'true', 'yes']
-    port = int(os.getenv('FLASK_PORT', 5000))
-    host = os.getenv('FLASK_HOST', '127.0.0.1')
+    port = int(os.getenv('PORT') or os.getenv('FLASK_PORT') or 5000)
+    host = os.getenv('FLASK_HOST', '0.0.0.0' if os.getenv('PORT') else '127.0.0.1')
+
 
     # Debug safety check: Never run debug mode in production environment
     if flask_env == 'production' and debug_mode:
