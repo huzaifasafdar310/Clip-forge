@@ -4,7 +4,8 @@ import { api } from '@/lib/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const DEFAULT_CLIENT_ID = '370278236610-qa33h70cttb3732145vn86va8f03uuaa.apps.googleusercontent.com';
+const DEFAULT_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '370278236610-qa33h70cttb3732145vn86va8f03uuaa.apps.googleusercontent.com';
+
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<GoogleUser | null>(null);
