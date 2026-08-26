@@ -167,12 +167,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             />
           ) : isYouTubeClip && youtubeEmbedUrl ? (
             <iframe
+              key={`yt_${clip?.video_id}_${clip?.start_seconds}_${clip?.end_seconds}`}
               src={youtubeEmbedUrl}
               title={clip?.title || 'YouTube Segment Preview'}
               className="w-full h-full object-cover border-0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
+
           ) : (
             <div className="flex flex-col items-center justify-center my-auto relative text-center p-4">
               <div className="w-20 h-20 rounded-2xl bg-surface-2 border border-border-subtle flex items-center justify-center shadow-lg">

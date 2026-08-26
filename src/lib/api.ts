@@ -44,12 +44,22 @@ export const api = {
     onProgress?.('Extracting video transcript & spoken dialog...', 35, 2);
     const transcriptResult = await youtubeService.fetchTranscript(details.videoId);
 
+    // Compute effective duration from transcript items if oEmbed returned a generic duration
+    let effectiveDuration = details.durationSeconds;
+    if (transcriptResult.available && transcriptResult.items.length > 0) {
+      const lastItem = transcriptResult.items[transcriptResult.items.length - 1];
+      const maxTime = Math.ceil(lastItem.start + (lastItem.dur || 5));
+      if (maxTime > 60) {
+        effectiveDuration = maxTime;
+      }
+    }
+
     let segments: any[];
     if (transcriptResult.available && transcriptResult.transcript.length > 30) {
       onProgress?.('Groq AI (LLaMA 3.3 70B): Scoring viral hooks & highlight moments...', 60, 3);
       segments = await aiService.analyzeTranscriptHighlights(
         transcriptResult.transcript,
-        details.durationSeconds,
+        effectiveDuration,
         details.title,
         numClips
       );
@@ -57,11 +67,12 @@ export const api = {
       onProgress?.('Captions unavailable — applying smart temporal segmentation...', 60, 3);
       segments = await aiService.analyzeTranscriptHighlights(
         '',
-        details.durationSeconds,
+        effectiveDuration,
         details.title,
         numClips
       );
     }
+
 
     onProgress?.('Generating viral titles, descriptions & SEO tags...', 85, 4);
     const generatedClips: Clip[] = [];
