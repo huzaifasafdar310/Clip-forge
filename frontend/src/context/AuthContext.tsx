@@ -15,39 +15,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [clientId, setClientId] = useState<string>(DEFAULT_CLIENT_ID);
   const [tokenClient, setTokenClient] = useState<any>(null);
 
-  // 1. Fetch public config (Google Client ID) & restore persistent user session from DB
+  // 1. Restore persistent user session from localStorage and optional backend
   useEffect(() => {
     const initAuth = async () => {
-      // Step A: Load Client ID from backend if available
+      // Step A: Restore from localStorage if present and not expired
       try {
-        const res = await fetch('/api/config');
-        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
-          const data = await res.json();
-          if (data?.google_client_id && data.google_client_id.trim()) {
-            setClientId(data.google_client_id.trim());
+        const saved = localStorage.getItem('clipai_user');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.accessToken && (parsed.expiresAt ? parsed.expiresAt > Date.now() : true)) {
+            setUser(parsed);
+          } else {
+            localStorage.removeItem('clipai_user');
           }
         }
       } catch {
-        // Safe fallback to DEFAULT_CLIENT_ID
+        localStorage.removeItem('clipai_user');
       }
 
-      // Step B: Check Database for existing persistent session
+      // Step B: If backend is configured, check database session
       try {
         const authMe = await api.getCurrentUser();
         if (authMe?.is_authenticated && authMe?.user && authMe?.access_token) {
-          setUser({
+          const dbUser: GoogleUser = {
             accessToken: authMe.access_token,
             name: authMe.user.name || 'YouTube Creator',
             email: authMe.user.email,
             avatarUrl: authMe.user.picture,
             channelTitle: authMe.user.channel_title,
-            expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days active
-          });
+            expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+          };
+          setUser(dbUser);
+          localStorage.setItem('clipai_user', JSON.stringify(dbUser));
         }
       } catch {
-        // No active session found - stay logged out
+        // Backend not connected or no session — safe to ignore
       }
-
     };
 
     initAuth();
@@ -62,7 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const client = (window as any).google.accounts.oauth2.initTokenClient({
             client_id: clientId,
-            scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
+            scope: 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
             callback: async (response: any) => {
               setIsLoggingIn(false);
               if (response.error) {
@@ -82,30 +85,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
               if (response.access_token) {
                 setAuthError(null);
+                const newUser: GoogleUser = {
+                  accessToken: response.access_token,
+                  name: 'YouTube Creator',
+                  expiresAt: Date.now() + (Number(response.expires_in) || 3600) * 1000,
+                };
+
+                // Fetch Google profile details (name, email, avatar) directly from Google API
                 try {
-                  // Persist user and token in Database so they remain logged in across visits
-                  const dbAuth = await api.loginUser({
+                  const profileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: `Bearer ${response.access_token}` },
+                  });
+                  if (profileRes.ok) {
+                    const profile = await profileRes.json();
+                    if (profile.name) newUser.name = profile.name;
+                    if (profile.email) newUser.email = profile.email;
+                    if (profile.picture) newUser.avatarUrl = profile.picture;
+                  }
+                } catch (profileErr) {
+                  console.warn('Google userinfo fetch note:', profileErr);
+                }
+
+                // Fetch YouTube channel details if accessible
+                try {
+                  const ytRes = await fetch(
+                    'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
+                    { headers: { Authorization: `Bearer ${response.access_token}` } }
+                  );
+                  if (ytRes.ok) {
+                    const ytData = await ytRes.json();
+                    if (ytData?.items?.[0]?.snippet) {
+                      newUser.channelTitle = ytData.items[0].snippet.title;
+                      if (!newUser.avatarUrl && ytData.items[0].snippet.thumbnails?.default?.url) {
+                        newUser.avatarUrl = ytData.items[0].snippet.thumbnails.default.url;
+                      }
+                    }
+                  }
+                } catch {}
+
+                // Save to local storage for persistence across visits
+                localStorage.setItem('clipai_user', JSON.stringify(newUser));
+                setUser(newUser);
+
+                // Persist token in backend DB if available
+                try {
+                  await api.loginUser({
                     access_token: response.access_token,
                     expires_in: Number(response.expires_in) || 3600,
                   });
-
-                  const newUser: GoogleUser = {
-                    accessToken: dbAuth.access_token || response.access_token,
-                    name: dbAuth.user?.name || 'YouTube Creator',
-                    email: dbAuth.user?.email,
-                    avatarUrl: dbAuth.user?.picture,
-                    channelTitle: dbAuth.user?.channel_title,
-                    expiresAt: Date.now() + (Number(response.expires_in) || 3600) * 1000,
-                  };
-                  setUser(newUser);
-                } catch (saveErr: any) {
-                  console.error('Failed to persist user session in DB:', saveErr);
-                  // Fallback in-memory
-                  setUser({
-                    accessToken: response.access_token,
-                    name: 'YouTube Creator',
-                    expiresAt: Date.now() + (Number(response.expires_in) || 3600) * 1000,
-                  });
+                } catch {
+                  // Silent fallback
                 }
               }
             },
@@ -141,7 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (tokenClient) {
       setIsLoggingIn(true);
       try {
-        tokenClient.requestAccessToken({ prompt: '' });
+        tokenClient.requestAccessToken({ prompt: 'consent' });
       } catch (err: any) {
         setIsLoggingIn(false);
         setAuthError(`Failed to request access token: ${err?.message || err}`);
@@ -155,15 +184,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = async () => {
-    try {
-      await api.logoutUser();
-    } catch (e) {
-      console.warn('Logout note:', e);
-    }
+  const logout = () => {
+    localStorage.removeItem('clipai_user');
     setUser(null);
     setAuthError(null);
+    api.logoutUser().catch(() => {});
   };
+
 
   const clearAuthError = () => {
     setAuthError(null);
