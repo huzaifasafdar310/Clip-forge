@@ -28,10 +28,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   // Fetch recent clips and stats
-  const { data: projectsData, isLoading: isProjectsLoading } = useQuery({
+  const { data: projectsData, isLoading: isProjectsLoading, refetch } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.getProjects(),
   });
+
 
   const handleAnalyzeYoutube = async (url: string, numClips: number, suffix: string) => {
     setSourceLabel(url);
@@ -121,8 +122,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               onSelectStudioClip(clip);
               navigate('/app/studio');
             }}
+            onClipsChanged={() => refetch()}
             isLoading={isProjectsLoading}
           />
+
         </div>
 
         <div className="space-y-4">

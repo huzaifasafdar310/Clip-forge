@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Edit3, Download, Flame, Video as VideoIcon } from 'lucide-react';
+import { Play, Edit3, Download, Flame, Trash2, Video as VideoIcon } from 'lucide-react';
 import { Clip } from '@/types/api';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -11,14 +11,17 @@ import { calculateViralScore } from '@/lib/utils';
 interface RecentClipsGridProps {
   clips: Clip[];
   onSelectClip: (clip: Clip) => void;
+  onClipsChanged?: () => void;
   isLoading?: boolean;
 }
 
 export const RecentClipsGrid: React.FC<RecentClipsGridProps> = ({
   clips,
   onSelectClip,
+  onClipsChanged,
   isLoading,
 }) => {
+
   const navigate = useNavigate();
 
   const handleDownload = (clipId: number, e: React.MouseEvent) => {
@@ -127,6 +130,22 @@ export const RecentClipsGrid: React.FC<RecentClipsGridProps> = ({
                     className="h-8 px-2.5"
                   >
                     <Download className="w-3.5 h-3.5" />
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title="Delete Clip"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (window.confirm('Delete this clip?')) {
+                        await api.deleteClip(clip.id);
+                        onClipsChanged?.();
+                      }
+                    }}
+                    className="h-8 px-2 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
               </div>

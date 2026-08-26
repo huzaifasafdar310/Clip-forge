@@ -132,8 +132,10 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
           onSelectStudioClip(clip);
           navigate('/app/studio');
         }}
+        onClipsChanged={() => refetch()}
         isLoading={isLoading}
       />
+
 
       {/* Upload Processing Modal */}
       <ProcessingModal

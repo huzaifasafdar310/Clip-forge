@@ -93,10 +93,12 @@ export const storageService = {
     return clips[index];
   },
 
-  deleteClip(clipId: number): void {
-    const clips = this.getClips().filter((c) => c.id !== clipId);
+  deleteClip(clipId: number | string): void {
+    const targetId = Number(clipId);
+    const clips = this.getClips().filter((c) => Number(c.id) !== targetId);
     this.saveClips(clips);
   },
+
 
   // Source Channels Storage
   getSourceChannels(): SourceChannel[] {
