@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { LandingPage } from '@/pages/LandingPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { StudioPage } from '@/pages/StudioPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
 import { SchedulePage } from '@/pages/SchedulePage';
+import { PrivacyPolicyPage } from '@/pages/PrivacyPolicyPage';
+import { TermsOfServicePage } from '@/pages/TermsOfServicePage';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { MobileDrawer } from '@/components/layout/MobileDrawer';
@@ -57,68 +59,74 @@ export const App: React.FC = () => {
   return (
     <>
       <Routes>
-      {/* Surface 1: Marketing / Landing */}
-      <Route path="/" element={<LandingPage onClipsLoaded={handleClipsLoaded} />} />
+        {/* Surface 1: Marketing / Landing */}
+        <Route path="/" element={<LandingPage onClipsLoaded={handleClipsLoaded} />} />
 
-      {/* Surface 2: App Shell */}
-      <Route
-        path="/app"
-        element={
-          <AppLayout>
-            <DashboardPage
-              onClipsLoaded={handleClipsLoaded}
-              onSelectStudioClip={handleSelectStudioClip}
-            />
-          </AppLayout>
-        }
-      />
-      <Route
-        path="/app/dashboard"
-        element={
-          <AppLayout>
-            <DashboardPage
-              onClipsLoaded={handleClipsLoaded}
-              onSelectStudioClip={handleSelectStudioClip}
-            />
-          </AppLayout>
-        }
-      />
-      <Route
-        path="/app/studio"
-        element={
-          <AppLayout>
-            <StudioPage
-              clips={currentClips}
-              activeClipId={activeClipId}
-              onClipsUpdated={setCurrentClips}
-            />
-          </AppLayout>
-        }
-      />
-      <Route
-        path="/app/projects"
-        element={
-          <AppLayout>
-            <ProjectsPage
-              onSelectStudioClip={handleSelectStudioClip}
-              onClipsLoaded={handleClipsLoaded}
-            />
-          </AppLayout>
-        }
-      />
-      <Route
-        path="/app/schedule"
-        element={
-          <AppLayout>
-            <SchedulePage />
-          </AppLayout>
-        }
-      />
+        {/* Legal & Google Verification Surfaces */}
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsOfServicePage />} />
+        <Route path="/terms-of-service" element={<TermsOfServicePage />} />
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-    <AuthErrorModal />
-  </>
+        {/* Surface 2: App Shell */}
+        <Route
+          path="/app"
+          element={
+            <AppLayout>
+              <DashboardPage
+                onClipsLoaded={handleClipsLoaded}
+                onSelectStudioClip={handleSelectStudioClip}
+              />
+            </AppLayout>
+          }
+        />
+        <Route
+          path="/app/dashboard"
+          element={
+            <AppLayout>
+              <DashboardPage
+                onClipsLoaded={handleClipsLoaded}
+                onSelectStudioClip={handleSelectStudioClip}
+              />
+            </AppLayout>
+          }
+        />
+        <Route
+          path="/app/studio"
+          element={
+            <AppLayout>
+              <StudioPage
+                clips={currentClips}
+                activeClipId={activeClipId}
+                onClipsUpdated={setCurrentClips}
+              />
+            </AppLayout>
+          }
+        />
+        <Route
+          path="/app/projects"
+          element={
+            <AppLayout>
+              <ProjectsPage
+                onSelectStudioClip={handleSelectStudioClip}
+                onClipsLoaded={handleClipsLoaded}
+              />
+            </AppLayout>
+          }
+        />
+        <Route
+          path="/app/schedule"
+          element={
+            <AppLayout>
+              <SchedulePage />
+            </AppLayout>
+          }
+        />
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <AuthErrorModal />
+    </>
   );
 };
