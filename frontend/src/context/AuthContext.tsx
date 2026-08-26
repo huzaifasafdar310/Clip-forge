@@ -18,23 +18,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // 1. Fetch public config (Google Client ID) & restore persistent user session from DB
   useEffect(() => {
     const initAuth = async () => {
-      // Step A: Load Client ID
+      // Step A: Load Client ID from backend if available
       try {
         const res = await fetch('/api/config');
-        if (res.ok) {
+        if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
           const data = await res.json();
-          if (data.google_client_id && data.google_client_id.trim()) {
+          if (data?.google_client_id && data.google_client_id.trim()) {
             setClientId(data.google_client_id.trim());
           }
         }
-      } catch (err) {
-        console.warn('Could not fetch backend config, using default Client ID:', err);
+      } catch {
+        // Safe fallback to DEFAULT_CLIENT_ID
       }
 
       // Step B: Check Database for existing persistent session
       try {
         const authMe = await api.getCurrentUser();
-        if (authMe.is_authenticated && authMe.user && authMe.access_token) {
+        if (authMe?.is_authenticated && authMe?.user && authMe?.access_token) {
           setUser({
             accessToken: authMe.access_token,
             name: authMe.user.name || 'YouTube Creator',
@@ -44,9 +44,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days active
           });
         }
-      } catch (err) {
-        console.warn('Session check note:', err);
+      } catch {
+        // No active session found - stay logged out
       }
+
     };
 
     initAuth();

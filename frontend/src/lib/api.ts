@@ -24,11 +24,16 @@ export class ApiError extends Error {
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
-  let data: any;
-  try {
-    data = await res.json();
-  } catch (err) {
-    data = null;
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+  let data: any = null;
+
+  if (isJson) {
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
   }
 
   if (!res.ok) {
@@ -36,8 +41,13 @@ async function handleResponse<T>(res: Response): Promise<T> {
     throw new ApiError(errorMsg, res.status);
   }
 
+  if (!isJson || data === null) {
+    throw new ApiError('Backend returned non-JSON response.', res.status);
+  }
+
   return data as T;
 }
+
 
 export const api = {
   async analyzeYoutubeUrl(url: string, numClips: number = 3): Promise<AnalyzeResponse> {
