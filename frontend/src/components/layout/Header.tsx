@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Film, Zap, Menu, LogIn, CheckCircle, Video } from 'lucide-react';
+import { Film, Zap, Menu, LogIn, CheckCircle, Video, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { NotificationDropdown } from './NotificationDropdown';
+import { SettingsModal } from '@/components/common/SettingsModal';
 import { useAuth } from '@/context/AuthContext';
 
 interface HeaderProps {
@@ -13,6 +14,8 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAuthenticated, login, isLoggingIn } = useAuth();
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
 
   const getBreadcrumb = () => {
     switch (location.pathname) {
@@ -69,7 +72,19 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
           </Button>
         )}
 
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setIsSettingsOpen(true)}
+          className="p-2 text-muted-foreground hover:text-foreground"
+          title="API Settings"
+        >
+          <Settings className="w-4 h-4" />
+        </Button>
+
         <NotificationDropdown />
+        <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
 
         {/* YouTube Auth Badge */}
         <div className="pl-3 border-l border-border-subtle">
