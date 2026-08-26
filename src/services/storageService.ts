@@ -48,6 +48,16 @@ export const storageService = {
     );
   },
 
+  getGoogleClientId(): string {
+    const saved = this.getSettings().googleClientId;
+    return (
+      saved ||
+      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID) ||
+      '115243955025-34mt0dlogqe8pu8vjfqfg6l6s4v6j0qh.apps.googleusercontent.com'
+    );
+  },
+
+
   // Clips & Projects Storage
   getClips(): Clip[] {
     try {

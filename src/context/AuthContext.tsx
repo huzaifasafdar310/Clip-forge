@@ -1,17 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { GoogleUser, AuthContextType } from '@/types/auth';
+import { storageService } from '@/services/storageService';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Primary source: Build-time VITE_GOOGLE_CLIENT_ID environment variable
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<GoogleUser | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [clientId] = useState<string>(CLIENT_ID);
+  const [clientId] = useState<string>(() => storageService.getGoogleClientId());
   const [tokenClient, setTokenClient] = useState<any>(null);
+
 
   // Initialize Google Token Client when Google script loads and clientId is configured
   useEffect(() => {
