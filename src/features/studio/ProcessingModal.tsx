@@ -221,12 +221,35 @@ export const ProcessingModal: React.FC<ProcessingModalProps> = ({
             <div className="flex items-start gap-2.5 text-xs text-status-error">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
               <div className="space-y-1">
-                <p className="font-bold">Publishing could not complete</p>
+                <p className="font-bold">
+                  {error.toLowerCase().includes('exceeded the number of videos')
+                    ? 'YouTube Channel Daily Upload Limit Reached'
+                    : 'Publishing could not complete'}
+                </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  {error}
+                  {error.toLowerCase().includes('exceeded the number of videos')
+                    ? 'YouTube enforces a daily upload limit on channels (resets every 24 hours). You can download the rendered 9:16 MP4 below and upload it directly in YouTube Studio, or wait for your daily upload quota to reset.'
+                    : error}
                 </p>
               </div>
             </div>
+
+            {error.toLowerCase().includes('exceeded the number of videos') && (
+              <div className="p-2.5 bg-surface-2/80 rounded-xl border border-border-subtle text-[11px] text-foreground flex items-center justify-between gap-3">
+                <span className="text-muted-foreground font-mono">
+                  Bypass API limit via web upload:
+                </span>
+                <a
+                  href="https://studio.youtube.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary hover:underline font-bold inline-flex items-center gap-1 shrink-0"
+                >
+                  <span>Open YouTube Studio</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-2 pt-1">
               {onRetry && (
@@ -241,6 +264,7 @@ export const ProcessingModal: React.FC<ProcessingModalProps> = ({
             </div>
           </div>
         )}
+
 
         {/* Footer actions when finished */}
         {isFinished && (
